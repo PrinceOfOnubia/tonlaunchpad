@@ -1,9 +1,9 @@
 {
   "projects": [
     {
-      "name": "PresalePool",
-      "path": "./contracts/PresalePool.tact",
-      "output": "./build/PresalePool"
+      "name": "Launchpad",
+      "path": "./contracts/Launchpad.tact",
+      "output": "./build/Launchpad"
     }
   ]
 }

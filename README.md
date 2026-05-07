@@ -1,40 +1,44 @@
 # TON Presale Launchpad Contracts
 
-Reusable TON/Tact contract layer for a presale launchpad MVP. The frontend is expected to deploy one `PresalePool` contract per presale and call the typed messages documented in `frontend-integration.md`.
+Tact + Blueprint/Sandbox contract layer for the TonPad frontend launch flow.
 
-## Contract
+The current launchpad layer has five contracts compiled from `contracts/Launchpad.tact`:
 
-`PresalePool` accepts TON contributions during a configured sale window and later allows contributors to claim Jettons if the sale succeeds, or refund TON if the sale fails or is cancelled.
+- `LaunchpadFactory` - receives the frontend create config, deploys a token and pool, mints allocations, and stores launch records.
+- `LaunchpadJettonMaster` - TEP-74 compatible Jetton master for each launched token.
+- `JettonWallet` - deterministic TEP-74 compatible Jetton wallet for holders, pools, and adapters.
+- `PresalePool` - accepts TON, enforces caps/windows, owns presale and liquidity token allocations, migrates liquidity, enables claims/refunds, and manages treasury/buyback reserves.
+- `DexAdapter` - DEX boundary stub. It records liquidity migrations and buyback executions. Full DeDust or STON.fi integration should live behind this interface.
 
-The pool stores:
+## Frontend Launch Flow
 
-- presale config: owner, sale token Jetton master and wallet, treasury, buyback wallet, caps, contribution limits, sale window, claim start
-- accounting: total raised, total sold, contribution per wallet, claim/refund state
-- lifecycle flags: finalized, cancelled, paused
-- buyback reserve state: enabled flag, percent, chunk size, interval, start time, released amount, reserve amount
+1. Frontend submits `LaunchToken` to `LaunchpadFactory`.
+2. Factory validates allocation totals, caps, schedule, liquidity percent, and buyback limits.
+3. Factory deploys `LaunchpadJettonMaster`.
+4. Factory deploys `PresalePool`.
+5. Factory mints:
+   - presale allocation + liquidity allocation to the `PresalePool` Jetton wallet
+   - creator allocation to the creator Jetton wallet
+6. Users contribute TON to `PresalePool` during the active window.
+7. If `totalRaised >= softCap`, anyone can call `MigrateLiquidity` after the sale ends, or immediately once hard cap is filled.
+8. Pool calculates:
+   - `liquidityTON = totalRaised * liquidityPercentOfRaised / 100`
+   - `treasuryTON = totalRaised - liquidityTON`
+   - `buybackReserve = treasuryTON * buybackPercentBps / 10000`
+9. Pool sends `liquidityTON` and real Jettons from the pool Jetton wallet to the `DexAdapter` Jetton wallet, then sets `migrationDone = true`.
+10. Contributors can claim real Jettons to their Jetton wallets only after `migrationDone`.
+11. Treasury can withdraw only after migration, and never receives liquidity TON or buyback reserve.
+12. If the sale fails, contributors can refund and creator can recover unsold token allocations. No migration or buyback is allowed.
 
-## Flow
+## Buybacks
 
-1. Owner deploys a new `PresalePool` for one presale.
-2. Users send `Contribute` with TON while `startTime <= now <= endTime`.
-3. The contract enforces min/max contribution and hard cap. If a contribution crosses the hard cap, only the remaining cap is accepted and the excess is refunded.
-4. After the sale ends, owner sends `Finalize`.
-5. If `totalRaised >= softCap`, the sale succeeds. Buyback reserve is calculated once at finalization.
-6. Contributors send `ClaimTokens` after `claimStartTime`; the pool instructs its configured sale token Jetton wallet to transfer sale tokens.
-7. Treasury sends `WithdrawTreasury`; withdrawable TON is `totalRaised - buybackReserve - treasuryWithdrawn`.
-8. If the sale fails or owner cancels before finalization, contributors send `Refund`.
+Buybacks are reserved TON routed through `DexAdapter`.
 
-## Buyback Mode
-
-The contract does not perform DEX buys. It only reserves TON and releases scheduled TON chunks to `buybackWallet`.
-
-Constraints:
-
-- `buybackPercentBps <= 4000`
-- `buybackChunkBps <= buybackPercentBps`
-- treasury withdrawal always excludes `buybackReserve`
-- `ReleaseBuybackChunk` calculates elapsed intervals and sends only newly available TON
-- double release in the same interval is rejected
+- `buybackPercentBps` must be `<= 4000`.
+- `buybackChunkBps` must be `<= buybackPercentBps`.
+- Buybacks start only after liquidity migration/listing.
+- `ExecuteBuyback` calculates elapsed intervals since sale end and releases only newly scheduled TON.
+- Double execution of the same interval is rejected.
 
 ## Development
 
@@ -42,15 +46,16 @@ Constraints:
 npm install
 npm run build
 npm test
+npm run lint
 ```
 
 ## Files
 
-- `contracts/PresalePool.tact` - Tact smart contract
-- `tests/PresalePool.spec.ts` - Blueprint/Sandbox tests
-- `scripts/deployPresalePool.ts` - testnet deployment template
-- `frontend-integration.md` - frontend message and getter reference
+- `contracts/Launchpad.tact` - factory, Jetton master/wallet, pool, DEX adapter
+- `tests/Launchpad.spec.ts` - full frontend launch-flow tests
+- `scripts/deployLaunchpad.ts` - deploys factory and adapter
+- `frontend-integration.md` - message/getter reference for the frontend/backend
 
-## Notes
+## Testnet Notes
 
-The pool must be funded with enough sale Jettons in `saleTokenJettonWallet` before claims begin. The configured `saleTokenJettonWallet` should be the pool's Jetton wallet for the sale token master.
+Deploy `LaunchpadFactory` and `DexAdapter` first. The frontend/backend should call `LaunchToken` on the factory for each launch. Each launch deploys its own Jetton master and deterministic Jetton wallets are deployed/used as allocations move.

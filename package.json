@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tact --config tact.config.json --project PresalePool --quiet",
+    "build": "tact --config tact.config.json --project Launchpad --quiet",
     "test": "npm run build --silent && jest --runInBand",
     "lint": "tsc --noEmit"
   },
