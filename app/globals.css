@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f5f9ff;
+  --ton: #0098ea;
+}
+
+html,
+body {
+  background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(0, 152, 234, 0.18);
+  color: #0c4a6e;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.12);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.22);
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .glass {
+    @apply rounded-2xl border border-white bg-white/70 shadow-[0_4px_20px_-8px_rgba(0,40,80,0.08)] backdrop-blur-md;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-ton-500 to-ton-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-glow-ton disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-ink-700 ring-1 ring-inset ring-ink-200 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .input-base {
+    @apply w-full rounded-xl border-0 bg-white px-4 py-2.5 text-sm text-ink-900 ring-1 ring-inset ring-ink-200 transition-shadow placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-ton-500;
+  }
+
+  .range-input {
+    @apply h-2 w-full appearance-none rounded-full bg-ink-100 outline-none;
+  }
+  .range-input::-webkit-slider-thumb {
+    @apply h-5 w-5 cursor-pointer appearance-none rounded-full bg-white shadow-md ring-2 ring-ton-500 transition-transform hover:scale-110;
+  }
+  .range-input::-moz-range-thumb {
+    @apply h-5 w-5 cursor-pointer rounded-full border-0 bg-white shadow-md ring-2 ring-ton-500 transition-transform;
+  }
+}
