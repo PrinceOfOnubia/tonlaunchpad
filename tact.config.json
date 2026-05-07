@@ -1,0 +1,9 @@
+{
+  "projects": [
+    {
+      "name": "PresalePool",
+      "path": "./contracts/PresalePool.tact",
+      "output": "./build/PresalePool"
+    }
+  ]
+}
