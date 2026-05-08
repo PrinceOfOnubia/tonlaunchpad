@@ -20,9 +20,10 @@ export function Footer() {
             { href: "/profile", label: "My portfolio" },
           ]} />
 
-          <FooterCol title="Resources" links={[
-            { href: "https://ton.org", label: "About TON", external: true },
-            { href: "https://github.com/ton-blockchain", label: "TON GitHub", external: true },
+          <FooterCol title="Follow us" links={[
+            // TODO: replace with your real handles before going live
+            { href: "https://twitter.com/tonpad", label: "Twitter / X", external: true },
+            { href: "https://t.me/tonpad", label: "Telegram", external: true },
           ]} />
         </div>
 
