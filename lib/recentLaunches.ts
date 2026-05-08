@@ -55,8 +55,13 @@ export function recentLaunchesPage(params: TokenListParams = {}): Paginated<Toke
     );
   }
 
-  if (params.status) {
-    items = items.filter((token) => token.presale.status === params.status);
+  if (params.status && params.status !== "all" && params.status !== "trending") {
+    items = items.filter((token) => {
+      if (params.status === "concluded" || params.status === "succeeded") {
+        return token.presale.status === "succeeded" || token.presale.status === "finalized";
+      }
+      return token.presale.status === params.status;
+    });
   }
 
   return { items, total: items.length, page: 1, limit: items.length || 20 };

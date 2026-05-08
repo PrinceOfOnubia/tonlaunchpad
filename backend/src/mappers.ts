@@ -24,6 +24,7 @@ export function launchToToken(launch: Launch) {
     symbol: launch.symbol,
     description: launch.description,
     imageUrl: launch.logoUrl,
+    metadataUrl: launch.metadataUrl,
     totalSupply: launch.totalSupply,
     decimals: launch.decimals,
     allocations: {
@@ -60,6 +61,7 @@ export function launchToToken(launch: Launch) {
     marketCap: 0,
     volume24h: 0,
     holders: 0,
+    setupState: launch.pendingIndexing ? "preparing" : "ready",
   };
 }
 

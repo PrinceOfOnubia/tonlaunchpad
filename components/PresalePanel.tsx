@@ -73,7 +73,7 @@ export function PresalePanel({ token }: Props) {
     }
     const poolAddress = token.presalePoolAddress;
     if (!poolAddress) {
-      setError("Presale pool is still being indexed. Please try again shortly.");
+      setError("Presale setup is finalizing. Please try again in a moment.");
       return;
     }
     setBusy("contribute");

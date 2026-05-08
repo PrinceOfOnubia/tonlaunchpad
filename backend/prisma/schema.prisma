@@ -30,6 +30,7 @@ model Launch {
   symbol                  String
   description             String        @default("")
   logoUrl                 String?
+  metadataUrl             String?
   creatorWallet           String
   factoryAddress          String
   tokenMasterAddress      String?       @unique
@@ -55,6 +56,7 @@ model Launch {
   liquidityAllocation     Float         @default(0)
   creatorAllocation       Float         @default(0)
   social                  Json?
+  pendingIndexing         Boolean       @default(true)
   lastIndexedAt           DateTime?
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt

@@ -96,6 +96,12 @@ router.get("/api/launches", async (req, res, next) => {
       () => contributorCountByLaunch(launches.map((launch) => launch.id)),
       new Map<string, number>(),
     );
+    console.log("[api] GET /api/launches", {
+      status: query.status,
+      search: query.search || undefined,
+      total,
+      returned: launches.length,
+    });
     res.json({
       items: launches.map((launch) => ({
         ...launchToToken(launch),
@@ -107,7 +113,6 @@ router.get("/api/launches", async (req, res, next) => {
       total,
       page: query.page,
       limit: query.limit,
-      note: total === 0 ? "Indexer temporarily unavailable or no launches indexed yet" : undefined,
     });
   } catch (err) {
     next(err);
@@ -146,6 +151,15 @@ router.post("/api/launches", async (req, res, next) => {
     const body = createLaunchSchema.parse(req.body);
     const creatorWallet = body.creatorWallet ?? body.creator;
     if (!creatorWallet) return res.status(400).json({ message: "creatorWallet is required" });
+    console.log("[api] POST /api/launches received", {
+      name: body.name,
+      symbol: body.symbol,
+      creatorWallet,
+      hasPool: !!body.presalePoolAddress,
+      hasToken: !!body.tokenMasterAddress,
+      hasTxHash: !!body.txHash,
+      hasBoc: !!body.transactionBoc,
+    });
 
     const factoryAddress = body.factoryAddress ?? config.factoryAddress;
     const dexAdapterAddress = body.dexAdapterAddress ?? config.dexAdapterAddress;
@@ -164,6 +178,7 @@ router.post("/api/launches", async (req, res, next) => {
         symbol: body.symbol.toUpperCase(),
         description: body.description,
         logoUrl: body.logoUrl ?? body.imageUrl ?? null,
+        metadataUrl: body.metadataUrl ?? null,
         creatorWallet,
         factoryAddress,
         tokenMasterAddress: body.tokenMasterAddress ?? null,
@@ -188,11 +203,15 @@ router.post("/api/launches", async (req, res, next) => {
         liquidityAllocation: body.allocations.liquidity,
         creatorAllocation: body.allocations.creator,
         social: body.social,
+        pendingIndexing: !(body.tokenMasterAddress && body.presalePoolAddress),
       },
       update: {
         logoUrl: body.logoUrl ?? body.imageUrl ?? undefined,
+        metadataUrl: body.metadataUrl ?? undefined,
         tokenMasterAddress: body.tokenMasterAddress ?? undefined,
         presalePoolAddress: body.presalePoolAddress ?? undefined,
+        pendingIndexing:
+          body.tokenMasterAddress && body.presalePoolAddress ? false : undefined,
         status,
         social: body.social,
       },
@@ -213,8 +232,14 @@ router.post("/api/launches", async (req, res, next) => {
     }
 
     await updateStatsCache();
+    console.log("[api] POST /api/launches saved", {
+      id: launch.id,
+      symbol: launch.symbol,
+      pendingIndexing: launch.pendingIndexing,
+    });
     res.status(201).json(launchToToken(launch));
   } catch (err) {
+    console.error("[api] POST /api/launches failed", err);
     next(err);
   }
 });

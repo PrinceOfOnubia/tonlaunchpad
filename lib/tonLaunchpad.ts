@@ -12,6 +12,7 @@ const LAUNCH_TOKEN_OPCODE = 1954225128;
 const CONTRIBUTE_OPCODE = 443500403;
 const LAUNCH_VALUE_TON = "1";
 export const DEFAULT_TOKEN_IMAGE_URL = "https://tonlaunchpad.vercel.app/icon.png";
+const DEFAULT_TOKEN_METADATA_URL = "https://tonlaunchpad.vercel.app/default-token-metadata.json";
 
 export function buildLaunchTokenTransaction(
   form: CreateTokenPayload,
@@ -197,13 +198,7 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
     symbol,
     description,
     imageUrl: form.imageUrl ?? DEFAULT_TOKEN_IMAGE_URL,
-    metadataUrl: form.metadataUrl ?? buildDataMetadataUrl({
-      name,
-      symbol,
-      description,
-      decimals,
-      image: form.imageUrl ?? DEFAULT_TOKEN_IMAGE_URL,
-    }),
+    metadataUrl: form.metadataUrl ?? DEFAULT_TOKEN_METADATA_URL,
     social: form.social,
     decimals,
     totalSupply: toTokenUnits(totalSupply, decimals),
@@ -231,17 +226,6 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
 
 function buildOffchainMetadataCell(url: string) {
   return beginCell().storeUint(1, 8).storeStringTail(url).endCell();
-}
-
-function buildDataMetadataUrl(metadata: {
-  name: string;
-  symbol: string;
-  description: string;
-  decimals: number;
-  image: string;
-}): string {
-  const json = JSON.stringify(metadata);
-  return `data:application/json,${encodeURIComponent(json)}`;
 }
 
 function requiredAddress(value: string | undefined, label: string): Address {

@@ -26,8 +26,10 @@ class TonpadIndexer {
     if (this.running) return;
     this.running = true;
     try {
+      console.log("[indexer] tick start");
       await this.pollFactory();
       await this.refreshLaunches();
+      console.log("[indexer] tick complete");
     } catch (err) {
       console.warn("[indexer] tick failed", err);
     } finally {
@@ -49,12 +51,41 @@ class TonpadIndexer {
         const presalePoolAddress = tuple.readAddress().toString();
         const creatorWallet = tuple.readAddress().toString();
 
-        await prisma.launch.upsert({
-          where: { presalePoolAddress },
-          create: {
-            tokenName: `Indexed Token ${i + 1}`,
+        const discoveredAt = new Date();
+        const existingByPool = await prisma.launch.findUnique({ where: { presalePoolAddress } });
+        const optimistic =
+          existingByPool ??
+          (await prisma.launch.findFirst({
+            where: { creatorWallet, presalePoolAddress: null },
+            orderBy: { createdAt: "desc" },
+          }));
+
+        if (optimistic) {
+          await prisma.launch.update({
+            where: { id: optimistic.id },
+            data: {
+              tokenMasterAddress,
+              presalePoolAddress,
+              creatorWallet,
+              factoryAddress: config.factoryAddress,
+              dexAdapterAddress: config.dexAdapterAddress,
+              pendingIndexing: false,
+              lastIndexedAt: discoveredAt,
+            },
+          });
+          console.log("[indexer] reconciled launch", {
+            id: optimistic.id,
+            presalePoolAddress,
+            tokenMasterAddress,
+          });
+          continue;
+        }
+
+        const created = await prisma.launch.create({
+          data: {
+            tokenName: `TONPad Launch ${i + 1}`,
             symbol: `TON${i + 1}`,
-            description: "Indexed from LaunchpadFactory. Metadata reconciliation pending.",
+            description: "Launch discovered from the TONPad factory.",
             logoUrl: "https://tonlaunchpad.vercel.app/icon.png",
             creatorWallet,
             factoryAddress: config.factoryAddress,
@@ -67,15 +98,14 @@ class TonpadIndexer {
             status: "upcoming",
             startTime: new Date(),
             endTime: new Date(Date.now() + 60 * 60 * 1000),
-            lastIndexedAt: new Date(),
+            pendingIndexing: false,
+            lastIndexedAt: discoveredAt,
           },
-          update: {
-            tokenMasterAddress,
-            creatorWallet,
-            factoryAddress: config.factoryAddress,
-            dexAdapterAddress: config.dexAdapterAddress,
-            lastIndexedAt: new Date(),
-          },
+        });
+        console.log("[indexer] discovered launch", {
+          id: created.id,
+          presalePoolAddress,
+          tokenMasterAddress,
         });
       } catch (err) {
         console.warn(`[indexer] failed to read factory launch ${i}`, err);

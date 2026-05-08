@@ -13,6 +13,7 @@
     "backend:prisma:migrate": "prisma migrate deploy --schema backend/prisma/schema.prisma",
     "contract:build": "tact --config tact.config.json --project Launchpad --quiet",
     "contract:test": "npm run contract:build --silent && jest --runInBand",
+    "test": "npm run contract:test",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

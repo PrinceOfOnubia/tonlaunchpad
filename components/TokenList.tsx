@@ -22,12 +22,12 @@ export function TokenList() {
     );
   }
   if (error) {
-    return <Empty>Failed to load tokens. Check your API connection.</Empty>;
+    return <Empty>Launch data is temporarily unavailable. Please try again shortly.</Empty>;
   }
   if (!data || data.items.length === 0) {
     return (
       <Empty>
-        No indexed tokens yet. Recent launches may appear shortly after testnet indexing.{" "}
+        No launches match your filters yet.{" "}
         <Link href="/create" className="font-semibold text-ton-600 hover:text-ton-700">
           Launch one →
         </Link>

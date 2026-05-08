@@ -96,7 +96,6 @@ export function CreateTokenForm() {
   const [error, setError] = useState<string | null>(null);
   const [metadataNotice, setMetadataNotice] = useState<string | null>(null);
   const [deployedId, setDeployedId] = useState<string | null>(null);
-  const [txResult, setTxResult] = useState<string | null>(null);
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------
@@ -132,7 +131,6 @@ export function CreateTokenForm() {
   async function handleDeploy() {
     setError(null);
     setDeployStatus(null);
-    setTxResult(null);
     setExplorerUrl(null);
 
     const formError = firstValidationError(validation);
@@ -212,10 +210,10 @@ export function CreateTokenForm() {
       });
 
       console.debug("Launch transaction result BOC", result.boc);
-      const launchId = `recent-${Date.now().toString(36)}`;
+      let launchId = `recent-${Date.now().toString(36)}`;
       const createdAt = new Date().toISOString();
       const factoryAddress = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
-      const token = tokenFromLaunchInput({
+      let token = tokenFromLaunchInput({
         id: launchId,
         form: payload,
         factoryAddress,
@@ -233,20 +231,35 @@ export function CreateTokenForm() {
         tokenAddress: null,
         token,
       });
-      api.tokens
-        .create({
+      setDeployStatus("Preparing launch dashboard...");
+      try {
+        const savedToken = await api.tokens.create({
           ...payload,
           transactionBoc: result.boc,
           factoryAddress,
           dexAdapterAddress: process.env.NEXT_PUBLIC_DEX_ADAPTER_ADDRESS,
           tokenMasterAddress: null,
           presalePoolAddress: null,
-        })
-        .catch((err) => {
-          console.warn("Indexer temporarily unavailable. Launch kept in local fallback cache.", err);
-      });
+        });
+        launchId = savedToken.id;
+        token = savedToken;
+        saveRecentLaunch({
+          id: launchId,
+          name: token.name,
+          symbol: token.symbol,
+          transactionBoc: result.boc,
+          factoryAddress,
+          creator: wallet,
+          createdAt,
+          poolAddress: token.presalePoolAddress ?? null,
+          tokenAddress: token.address ?? null,
+          token,
+        });
+      } catch (err) {
+        console.warn("Launch dashboard save unavailable. Launch kept in local fallback cache.", err);
+        setMetadataNotice("Launch saved locally. Your dashboard will update when the service is reachable.");
+      }
 
-      setTxResult(result.boc);
       setExplorerUrl(testnetExplorerUrl({ address: factoryAddress ?? wallet }));
       setDeployedId(launchId);
       setDeployStatus("Launch transaction submitted.");
@@ -270,18 +283,18 @@ export function CreateTokenForm() {
         </div>
         <h2 className="mt-5 font-display text-2xl font-bold text-ink-900">Launch submitted!</h2>
         <p className="mt-2 text-sm text-ink-500">
-          Launch submitted successfully. Your token and presale pool are being created on TON
+          Your launch has been submitted successfully. Your token launch is now live on TON
           testnet.
         </p>
-        <p className="mt-2 text-xs text-amber-600">
-          Presale is being indexed. It may appear shortly.
+        <p className="mt-2 text-xs text-emerald-600">
+          Your presale dashboard is now being prepared.
         </p>
         {data.name && (
           <div className="mt-4 rounded-lg bg-ink-50 p-3">
             <div className="text-sm font-semibold text-ink-900">
               {data.name} <span className="font-mono text-ink-500">{data.symbol}</span>
             </div>
-            <div className="mt-1 text-xs font-medium text-amber-600">Pending indexing</div>
+            <div className="mt-1 text-xs font-medium text-emerald-600">Preparing launch</div>
           </div>
         )}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">

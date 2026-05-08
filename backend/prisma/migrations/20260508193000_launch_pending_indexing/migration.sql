@@ -1,0 +1,2 @@
+ALTER TABLE "Launch" ADD COLUMN "pendingIndexing" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "Launch" ADD COLUMN "metadataUrl" TEXT;

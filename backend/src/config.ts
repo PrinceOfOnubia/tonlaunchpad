@@ -15,5 +15,5 @@ export const config = {
   publicBaseUrl: (process.env.PUBLIC_UPLOAD_BASE_URL ?? process.env.BACKEND_PUBLIC_URL ?? "").replace(/\/$/, ""),
   uploadDir: process.env.UPLOAD_DIR ?? "backend/uploads",
   indexerEnabled: process.env.INDEXER_ENABLED !== "false",
-  indexerIntervalMs: Number(process.env.INDEXER_INTERVAL_MS ?? 30_000),
+  indexerIntervalMs: Number(process.env.INDEXER_INTERVAL_MS ?? 5_000),
 };
