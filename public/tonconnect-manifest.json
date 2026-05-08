@@ -1,7 +1,5 @@
 {
-  "url": "https://github.com/PrinceOfOnubia/tonpadproject",
+  "url": "https://tonpad.app",
   "name": "TonPad",
-  "iconUrl": "https://ton.org/download/ton_symbol.png",
-  "termsOfUseUrl": "https://github.com/PrinceOfOnubia/tonpadproject",
-  "privacyPolicyUrl": "https://github.com/PrinceOfOnubia/tonpadproject"
+  "iconUrl": "https://ton.org/download/ton_symbol.png"
 }

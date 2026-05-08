@@ -1,4 +1,61 @@
-# TON Presale Launchpad Contracts
+# TonPad
+
+Production-ready TON presale launchpad with programmatic buybacks (0–40%).
+Next.js 14 frontend + Tact smart contracts.
+
+---
+
+## Frontend Quick Start
+
+```bash
+# 1. Install
+npm install
+
+# 2. Configure
+cp .env.example .env.local
+# Fill in NEXT_PUBLIC_API_URL (your backend) — at minimum.
+# NEXT_PUBLIC_SITE_URL is optional in dev (auto-detected from window).
+
+# 3. Run
+npm run dev      # http://localhost:3000
+```
+
+### What's in / what's out
+
+- **No mock data.** When the backend is unreachable, stats show `—`,
+  token lists show "no tokens yet" empty states. The UI never lies.
+- **TON wallet via TonConnect.** The provider is initialized synchronously,
+  so the "Connect Wallet" button works on first render.
+- **Production-only data flow.** Every component pulls from `lib/api.ts`
+  (typed fetch + SWR). Configure `NEXT_PUBLIC_API_URL` to wire the backend.
+
+### TonConnect manifest — important for production
+
+`public/tonconnect-manifest.json` defaults to a placeholder URL. Before
+launching, replace `url` with your real production domain. The wallet
+displays this to the user during the connection prompt:
+
+```json
+{
+  "url": "https://your-real-domain.com",
+  "name": "TonPad",
+  "iconUrl": "https://your-real-domain.com/icon.png"
+}
+```
+
+Also set `NEXT_PUBLIC_SITE_URL` to the same domain so the manifest URL
+the wallet fetches matches the deployed location.
+
+### Deployment (Vercel)
+
+1. Push to GitHub.
+2. Import the repo into Vercel.
+3. Set env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`.
+4. Update `public/tonconnect-manifest.json` `url` to your Vercel domain.
+
+---
+
+# Contracts
 
 Tact + Blueprint/Sandbox contract layer for the TonPad frontend launch flow.
 

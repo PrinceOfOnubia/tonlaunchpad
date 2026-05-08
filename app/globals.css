@@ -3,15 +3,30 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f5f9ff;
+  --bg-base: #fbfdff;
+  --bg-tint: #eaf3fc;
   --ton: #0098ea;
 }
 
 html,
 body {
-  background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
+  background-color: var(--bg-base);
+}
+
+body {
+  /* Layered: subtle grid pattern + soft radial blue glow + base gradient */
+  background-image:
+    /* Subtle dot/grid pattern */
+    radial-gradient(rgba(0, 152, 234, 0.05) 1px, transparent 1px),
+    /* Soft blue glow centered behind hero */
+    radial-gradient(ellipse 75% 50% at 50% 18%, rgba(51, 166, 246, 0.10), transparent 60%),
+    /* Base white → very light blue */
+    linear-gradient(180deg, #ffffff 0%, var(--bg-tint) 100%);
+  background-size: 28px 28px, auto, auto;
+  background-attachment: fixed;
+  min-height: 100vh;
 }
 
 ::selection {
@@ -19,7 +34,6 @@ body {
   color: #0c4a6e;
 }
 
-/* Scrollbar */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

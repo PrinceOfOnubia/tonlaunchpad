@@ -14,7 +14,7 @@ import {
   Rocket,
   Wallet,
 } from "lucide-react";
-import { api, ApiError, isLocalApiMode } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import {
   BUYBACK_PRESETS,
   DEFAULT_BUYBACK_PRESET_ID,
@@ -118,7 +118,7 @@ export function CreateTokenForm() {
   // Deploy
   // ---------------------------------------------------------------------
   async function handleDeploy() {
-    if (!wallet && !isLocalApiMode) {
+    if (!wallet) {
       tonConnectUI.openModal();
       return;
     }
@@ -133,7 +133,7 @@ export function CreateTokenForm() {
       const payload: CreateTokenPayload = {
         ...data,
         imageUrl,
-        creator: wallet || "local-demo-wallet",
+        creator: wallet,
       };
       const created = await api.tokens.create(payload);
       setDeployedId(created.id);
@@ -245,13 +245,9 @@ export function CreateTokenForm() {
                   <>
                     <Loader2 size={16} className="animate-spin" /> Deploying…
                   </>
-                ) : !wallet && !isLocalApiMode ? (
+                ) : !wallet ? (
                   <>
                     <Wallet size={16} /> Connect wallet to deploy
-                  </>
-                ) : isLocalApiMode ? (
-                  <>
-                    <Rocket size={16} /> Launch Demo
                   </>
                 ) : (
                   <>

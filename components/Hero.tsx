@@ -1,69 +1,63 @@
 import Link from "next/link";
-import { ArrowRight, Repeat2, Shield, Zap } from "lucide-react";
+import { ArrowRight, Rocket, Sparkles } from "lucide-react";
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden">
-      {/* Decorative blurs */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -left-24 top-12 h-72 w-72 rounded-full bg-ton-300/30 blur-3xl" />
-        <div className="absolute -right-24 top-32 h-96 w-96 rounded-full bg-ton-500/20 blur-3xl" />
-      </div>
-
-      <div className="container-page pt-16 pb-20 sm:pt-24 sm:pb-28 text-center">
-        <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-ton-200 bg-white/80 px-3 py-1 text-xs font-semibold text-ton-700 shadow-sm">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-ton-500 animate-pulse" />
-          Programmatic buybacks · Live on TON
+      <div className="container-page pt-12 pb-16 sm:pt-20 sm:pb-20 text-center">
+        {/* Devnet badge */}
+        <div className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-ton-100 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-ton-700 shadow-sm backdrop-blur-sm">
+          <Sparkles size={12} className="text-ton-500" />
+          Live on TON Devnet
         </div>
 
-        <h1 className="mt-6 font-display text-4xl font-bold tracking-tight text-ink-900 sm:text-6xl lg:text-7xl">
-          Launch tokens on{" "}
-          <span className="bg-gradient-to-r from-ton-500 to-ton-700 bg-clip-text text-transparent">
-            TON
-          </span>
+        {/* Title */}
+        <h1 className="mt-6 font-display text-4xl font-bold leading-[1.05] tracking-tight text-ink-900 sm:text-6xl lg:text-[5.25rem]">
+          Launch tokens on <span className="text-ton-500">TON</span>
+          <br className="hidden sm:block" />
+          <span className="block sm:inline"> in seconds, not days.</span>
         </h1>
-        <p className="mx-auto mt-5 max-w-xl text-base text-ink-500 sm:text-lg">
-          Fair presales, locked liquidity, and automatic buybacks of up to 40% — all configurable
-          in a single flow.
+
+        {/* Subtitle */}
+        <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-ink-500 sm:text-lg">
+          Fair-launch presales, instant DEX liquidity, automated buybacks — all
+          on the fastest blockchain in the universe.
         </p>
 
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/create" className="btn-primary">
-            Launch your token <ArrowRight size={16} />
+        {/* CTAs */}
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/create"
+            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-br from-ton-500 to-ton-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-ton-500/30 transition-all hover:shadow-glow-ton hover:-translate-y-0.5"
+          >
+            <Rocket size={16} />
+            Launch Token
+            <ArrowRight size={14} />
           </Link>
-          <Link href="/tokens" className="btn-ghost">
-            Explore tokens
+          <Link
+            href="/tokens"
+            className="inline-flex items-center gap-2 rounded-2xl border border-ink-200 bg-white px-6 py-3 text-sm font-semibold text-ink-700 shadow-sm transition-colors hover:bg-ink-50"
+          >
+            Explore Tokens
           </Link>
         </div>
 
-        <div className="mx-auto mt-10 grid max-w-3xl grid-cols-1 gap-3 text-left sm:grid-cols-3">
-          <Pill icon={Repeat2} label="0–40% buybacks" desc="Choose your cadence" />
-          <Pill icon={Shield} label="Locked liquidity" desc="Anti-rug by default" />
-          <Pill icon={Zap} label="Deploy in minutes" desc="No code, no friction" />
+        {/* Trust signals */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-ink-500">
+          <TrustSignal color="bg-emerald-500" label="Audited contracts" />
+          <TrustSignal color="bg-ton-500" label="Locked liquidity" />
+          <TrustSignal color="bg-amber-500" label="Auto buybacks" />
         </div>
       </div>
     </section>
   );
 }
 
-function Pill({
-  icon: Icon,
-  label,
-  desc,
-}: {
-  icon: typeof Repeat2;
-  label: string;
-  desc: string;
-}) {
+function TrustSignal({ color, label }: { color: string; label: string }) {
   return (
-    <div className="glass flex items-center gap-3 px-4 py-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ton-100 text-ton-600">
-        <Icon size={16} />
-      </div>
-      <div>
-        <div className="text-sm font-semibold text-ink-900">{label}</div>
-        <div className="text-xs text-ink-500">{desc}</div>
-      </div>
-    </div>
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`inline-block h-1.5 w-1.5 rounded-full ${color}`} />
+      {label}
+    </span>
   );
 }

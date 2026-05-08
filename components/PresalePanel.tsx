@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
-import { api, ApiError, isLocalApiMode } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useMyContribution } from "@/lib/hooks";
 import { cn, formatTon, timeUntil } from "@/lib/utils";
 import type { Token } from "@/lib/types";
@@ -19,11 +19,10 @@ export function PresalePanel({ token }: Props) {
   const [busy, setBusy] = useState<"contribute" | "claim" | "refund" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const actionWallet = wallet || (isLocalApiMode ? "local-demo-wallet" : "");
 
   const { data: myContrib, mutate: refreshContrib } = useMyContribution(
     token.id,
-    actionWallet || null,
+    wallet || null,
   );
 
   const numAmount = parseFloat(amount);
@@ -35,10 +34,7 @@ export function PresalePanel({ token }: Props) {
   const belowMin = min !== undefined && validAmount && numAmount < min;
   const aboveMax = max !== undefined && validAmount && numAmount > max;
 
-  async function send(boc: { to: string; amountNano: string; payload: string; validUntil: number; mock?: boolean }) {
-    if (boc.mock) {
-      return { boc: `local-demo-${Date.now().toString(36)}` };
-    }
+  async function send(boc: { to: string; amountNano: string; payload: string; validUntil: number }) {
     return tonConnectUI.sendTransaction({
       validUntil: boc.validUntil,
       messages: [{ address: boc.to, amount: boc.amountNano, payload: boc.payload }],
@@ -46,11 +42,11 @@ export function PresalePanel({ token }: Props) {
   }
 
   async function handleContribute() {
-    if (!actionWallet || !validAmount || belowMin || aboveMax) return;
+    if (!wallet || !validAmount || belowMin || aboveMax) return;
     setBusy("contribute");
     setError(null);
     try {
-      const boc = await api.presale.contribute(token.id, numAmount, actionWallet);
+      const boc = await api.presale.contribute(token.id, numAmount, wallet);
       const result = await send(boc);
       setTxHash(result.boc);
       setAmount("");
@@ -63,11 +59,11 @@ export function PresalePanel({ token }: Props) {
   }
 
   async function handleClaim() {
-    if (!actionWallet) return;
+    if (!wallet) return;
     setBusy("claim");
     setError(null);
     try {
-      const boc = await api.presale.claim(token.id, actionWallet);
+      const boc = await api.presale.claim(token.id, wallet);
       const result = await send(boc);
       setTxHash(result.boc);
       refreshContrib();
@@ -79,11 +75,11 @@ export function PresalePanel({ token }: Props) {
   }
 
   async function handleRefund() {
-    if (!actionWallet) return;
+    if (!wallet) return;
     setBusy("refund");
     setError(null);
     try {
-      const boc = await api.presale.refund(token.id, actionWallet);
+      const boc = await api.presale.refund(token.id, wallet);
       const result = await send(boc);
       setTxHash(result.boc);
       refreshContrib();
@@ -124,7 +120,7 @@ export function PresalePanel({ token }: Props) {
           max={max}
           belowMin={belowMin}
           aboveMax={aboveMax}
-          wallet={wallet || (isLocalApiMode ? "local-demo-wallet" : null)}
+          wallet={wallet || null}
           busy={busy === "contribute"}
           onSubmit={handleContribute}
           endTime={token.presale.endTime}
@@ -144,7 +140,7 @@ export function PresalePanel({ token }: Props) {
           </div>
           <button
             onClick={handleClaim}
-            disabled={(!wallet && !isLocalApiMode) || busy !== null || myContrib.claimed}
+            disabled={!wallet || busy !== null || myContrib.claimed}
             className="btn-primary w-full"
           >
             {busy === "claim" ? <Spinner /> : myContrib.claimed ? "Already claimed" : "Claim tokens"}
@@ -164,7 +160,7 @@ export function PresalePanel({ token }: Props) {
           </div>
           <button
             onClick={handleRefund}
-            disabled={(!wallet && !isLocalApiMode) || busy !== null}
+            disabled={!wallet || busy !== null}
             className="btn-primary w-full"
           >
             {busy === "refund" ? <Spinner /> : "Refund contribution"}
@@ -190,7 +186,7 @@ export function PresalePanel({ token }: Props) {
         </div>
       )}
 
-      {!wallet && !isLocalApiMode && token.presale.status !== "finalized" && (
+      {!wallet && token.presale.status !== "finalized" && (
         <div className="flex items-center gap-2 rounded-lg bg-ton-50 p-3 text-sm text-ton-700 ring-1 ring-ton-100">
           <Wallet size={16} />
           Connect your TON wallet to participate

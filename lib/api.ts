@@ -1,9 +1,7 @@
 // =============================================================================
-// API Client
-// All backend interactions go through here. The frontend never hard-codes data.
-//
-// Configure via NEXT_PUBLIC_API_URL (see .env.example).
-// Every method maps 1:1 to a documented endpoint in README.md → "API Contract".
+// API Client — production
+// All backend interactions go through here. Configure via NEXT_PUBLIC_API_URL.
+// Each method maps 1:1 to a documented endpoint in README.md → "API Contract".
 // =============================================================================
 
 import type {
@@ -17,10 +15,8 @@ import type {
   Transaction,
   UserPortfolio,
 } from "./types";
-import { mockApi } from "./mockApi";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
-export const isLocalApiMode = !API_URL;
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) {
@@ -32,17 +28,17 @@ export class ApiError extends Error {
 interface RequestOpts {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
-  /** Query string params */
   query?: Record<string, string | number | boolean | undefined>;
-  /** Pass through fetch signal for cancellation */
   signal?: AbortSignal;
-  /** Set when sending FormData (image upload) */
   isFormData?: boolean;
 }
 
 async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   if (!API_URL) {
-    throw new ApiError(0, "API URL is not configured.");
+    throw new ApiError(
+      0,
+      "Backend not configured. Set NEXT_PUBLIC_API_URL in .env.local.",
+    );
   }
 
   const url = new URL(`${API_URL}${path}`);
@@ -98,118 +94,99 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 // API surface
 // ---------------------------------------------------------------------------
+export interface PresaleTxRequest {
+  to: string;
+  amountNano: string;
+  payload: string;
+  validUntil: number;
+}
+
 export const api = {
   tokens: {
     list: (params: TokenListParams = {}, signal?: AbortSignal) =>
-      !isLocalApiMode
-        ? request<Paginated<Token>>("/tokens", { query: params as Record<string, never>, signal })
-        : mockApi.tokens.list(params),
+      request<Paginated<Token>>("/tokens", { query: params as Record<string, never>, signal }),
 
     trending: (limit = 6, signal?: AbortSignal) =>
-      !isLocalApiMode
-        ? request<Token[]>("/tokens/trending", { query: { limit }, signal })
-        : mockApi.tokens.trending(limit),
+      request<Token[]>("/tokens/trending", { query: { limit }, signal }),
 
     get: (id: string, signal?: AbortSignal) =>
-      !isLocalApiMode ? request<Token>(`/tokens/${encodeURIComponent(id)}`, { signal }) : mockApi.tokens.get(id),
+      request<Token>(`/tokens/${encodeURIComponent(id)}`, { signal }),
 
     chart: (id: string, timeframe: ChartTimeframe, signal?: AbortSignal) =>
-      !isLocalApiMode
-        ? request<PricePoint[]>(`/tokens/${encodeURIComponent(id)}/chart`, {
-            query: { timeframe },
-            signal,
-          })
-        : mockApi.tokens.chart(id, timeframe),
+      request<PricePoint[]>(`/tokens/${encodeURIComponent(id)}/chart`, {
+        query: { timeframe },
+        signal,
+      }),
 
     transactions: (id: string, limit = 25, signal?: AbortSignal) =>
-      !isLocalApiMode
-        ? request<Transaction[]>(`/tokens/${encodeURIComponent(id)}/transactions`, {
-            query: { limit },
-            signal,
-          })
-        : mockApi.tokens.transactions(id, limit),
+      request<Transaction[]>(`/tokens/${encodeURIComponent(id)}/transactions`, {
+        query: { limit },
+        signal,
+      }),
 
     create: (payload: CreateTokenPayload) =>
-      !isLocalApiMode ? request<Token>("/tokens", { method: "POST", body: payload }) : mockApi.tokens.create(payload),
+      request<Token>("/tokens", { method: "POST", body: payload }),
   },
 
   presale: {
     /**
-     * Returns BOC payload + destination address that the frontend hands to
-     * tonConnectUI.sendTransaction. Backend tracks the contribution off-chain
+     * Returns BOC payload + destination that the frontend feeds into
+     * tonConnectUI.sendTransaction. Backend tracks the contribution
      * once the on-chain tx confirms.
      */
     contribute: (tokenId: string, amountTon: number, wallet: string) =>
-      !isLocalApiMode
-        ? request<{ to: string; amountNano: string; payload: string; validUntil: number; mock?: boolean }>(
-            `/tokens/${encodeURIComponent(tokenId)}/presale/contribute`,
-            { method: "POST", body: { amountTon, wallet } },
-          )
-        : mockApi.presale.contribute(tokenId, amountTon, wallet),
+      request<PresaleTxRequest>(`/tokens/${encodeURIComponent(tokenId)}/presale/contribute`, {
+        method: "POST",
+        body: { amountTon, wallet },
+      }),
 
     claim: (tokenId: string, wallet: string) =>
-      !isLocalApiMode
-        ? request<{ to: string; amountNano: string; payload: string; validUntil: number; mock?: boolean }>(
-            `/tokens/${encodeURIComponent(tokenId)}/presale/claim`,
-            { method: "POST", body: { wallet } },
-          )
-        : mockApi.presale.claim(tokenId, wallet),
+      request<PresaleTxRequest>(`/tokens/${encodeURIComponent(tokenId)}/presale/claim`, {
+        method: "POST",
+        body: { wallet },
+      }),
 
     refund: (tokenId: string, wallet: string) =>
-      !isLocalApiMode
-        ? request<{ to: string; amountNano: string; payload: string; validUntil: number; mock?: boolean }>(
-            `/tokens/${encodeURIComponent(tokenId)}/presale/refund`,
-            { method: "POST", body: { wallet } },
-          )
-        : mockApi.presale.refund(tokenId, wallet),
+      request<PresaleTxRequest>(`/tokens/${encodeURIComponent(tokenId)}/presale/refund`, {
+        method: "POST",
+        body: { wallet },
+      }),
 
-    /** Per-wallet contribution status */
     myContribution: (tokenId: string, wallet: string, signal?: AbortSignal) =>
-      !isLocalApiMode
-        ? request<{ amountTon: number; tokensOwed: number; claimed: boolean }>(
-            `/tokens/${encodeURIComponent(tokenId)}/presale/contribution`,
-            { query: { wallet }, signal },
-          )
-        : mockApi.presale.myContribution(tokenId, wallet),
+      request<{ amountTon: number; tokensOwed: number; claimed: boolean }>(
+        `/tokens/${encodeURIComponent(tokenId)}/presale/contribution`,
+        { query: { wallet }, signal },
+      ),
   },
 
   stats: {
     platform: (signal?: AbortSignal) =>
-      !isLocalApiMode ? request<PlatformStats>("/stats", { signal }) : mockApi.stats.platform(),
+      request<PlatformStats>("/stats", { signal }),
   },
 
   user: {
     portfolio: (wallet: string, signal?: AbortSignal) =>
-      !isLocalApiMode
-        ? request<UserPortfolio>(`/users/${encodeURIComponent(wallet)}/portfolio`, { signal })
-        : mockApi.user.portfolio(wallet),
+      request<UserPortfolio>(`/users/${encodeURIComponent(wallet)}/portfolio`, { signal }),
 
     created: (wallet: string, signal?: AbortSignal) =>
-      !isLocalApiMode
-        ? request<Token[]>(`/users/${encodeURIComponent(wallet)}/created`, { signal })
-        : mockApi.user.created(wallet),
+      request<Token[]>(`/users/${encodeURIComponent(wallet)}/created`, { signal }),
 
     transactions: (wallet: string, limit = 50, signal?: AbortSignal) =>
-      !isLocalApiMode
-        ? request<Transaction[]>(`/users/${encodeURIComponent(wallet)}/transactions`, {
-            query: { limit },
-            signal,
-          })
-        : mockApi.user.transactions(wallet, limit),
+      request<Transaction[]>(`/users/${encodeURIComponent(wallet)}/transactions`, {
+        query: { limit },
+        signal,
+      }),
   },
 
   upload: {
-    /** Returns a public URL the frontend can use as imageUrl */
     image: async (file: File): Promise<{ url: string }> => {
       const fd = new FormData();
       fd.append("file", file);
-      return !isLocalApiMode
-        ? request<{ url: string }>("/upload/image", {
-            method: "POST",
-            body: fd,
-            isFormData: true,
-          })
-        : mockApi.upload.image(file);
+      return request<{ url: string }>("/upload/image", {
+        method: "POST",
+        body: fd,
+        isFormData: true,
+      });
     },
   },
 };

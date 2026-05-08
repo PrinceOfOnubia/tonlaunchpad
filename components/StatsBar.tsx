@@ -1,9 +1,16 @@
 "use client";
 
-import { Activity, Coins, Droplets, Users } from "lucide-react";
+import { Coins, Droplets, Users, TrendingUp } from "lucide-react";
 import { usePlatformStats } from "@/lib/hooks";
-import { cn, formatCompact, formatTon } from "@/lib/utils";
+import { formatCompact, formatTon } from "@/lib/utils";
 
+/**
+ * Order matches the production design (screenshot):
+ *   Tokens Launched · Total Liquidity · Active Holders · 24h Volume
+ *
+ * When the backend is offline (no NEXT_PUBLIC_API_URL or fetch fails) we render
+ * an em-dash so the UI degrades gracefully without showing fake numbers.
+ */
 export function StatsBar() {
   const { data, isLoading } = usePlatformStats();
 
@@ -14,44 +21,43 @@ export function StatsBar() {
       value: data ? formatCompact(data.totalTokens, 0) : null,
     },
     {
+      icon: Droplets,
+      label: "Total Liquidity",
+      value: data ? formatTon(data.totalLiquidityTon, 1) : null,
+    },
+    {
       icon: Users,
-      label: "Active Users",
+      label: "Active Holders",
       value: data ? formatCompact(data.totalUsers, 0) : null,
     },
     {
-      icon: Activity,
-      label: "Total Volume",
+      icon: TrendingUp,
+      label: "24h Volume",
       value: data ? formatTon(data.totalVolumeTon, 1) : null,
-    },
-    {
-      icon: Droplets,
-      label: "Liquidity Locked",
-      value: data ? formatTon(data.totalLiquidityTon, 1) : null,
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="glass grid grid-cols-2 divide-ink-100 sm:grid-cols-4 sm:divide-x">
       {items.map((item) => (
-        <div key={item.label} className="glass p-4">
-          <item.icon size={18} className="text-ton-500" />
-          <div className="mt-2 font-display text-2xl font-bold text-ink-900">
-            {item.value ?? <Skeleton wide={isLoading} />}
+        <div key={item.label} className="flex items-center gap-3 p-4 sm:p-5">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-ton-50 text-ton-500 ring-1 ring-inset ring-ton-100">
+            <item.icon size={18} strokeWidth={2.25} />
           </div>
-          <div className="text-xs font-medium text-ink-500">{item.label}</div>
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+              {item.label}
+            </div>
+            <div className="font-display text-xl font-bold leading-tight text-ink-900 sm:text-2xl">
+              {isLoading ? (
+                <span className="inline-block h-7 w-16 animate-pulse rounded bg-ink-100" />
+              ) : (
+                item.value ?? <span className="text-ink-300">—</span>
+              )}
+            </div>
+          </div>
         </div>
       ))}
     </div>
-  );
-}
-
-function Skeleton({ wide }: { wide: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-block h-7 rounded bg-ink-100",
-        wide ? "w-20 animate-pulse" : "w-20",
-      )}
-    />
   );
 }
