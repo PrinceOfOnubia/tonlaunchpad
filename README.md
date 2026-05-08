@@ -20,6 +20,65 @@ cp .env.example .env.local
 npm run dev      # http://localhost:3000
 ```
 
+## Backend / Indexer Quick Start
+
+The MVP backend lives in `backend/` and provides token discovery, stats,
+profiles, transactions, and a TON testnet reconciliation loop.
+
+```bash
+# 1. Configure env
+cp .env.example .env
+# Fill DATABASE_URL and TONCENTER_API_KEY.
+
+# 2. Generate Prisma client and migrate Postgres
+npm run backend:prisma:generate
+npm run backend:prisma:migrate
+
+# 3. Run the API/indexer locally
+npm run backend:dev      # http://localhost:4000
+```
+
+Required backend env:
+
+```bash
+DATABASE_URL=
+TONCENTER_ENDPOINT=https://testnet.toncenter.com/api/v2/jsonRPC
+TONCENTER_API_KEY=
+FACTORY_ADDRESS=EQCadGgX-fT-oYaR5iyrCPHYTrXWjx1Pmcxj9_E83qoHuwoR
+DEX_ADAPTER_ADDRESS=EQAxVYGGW85GzumFpfoXPm6SJmSlxB-n7eNEZDYq4YH5sUcp
+NETWORK=testnet
+PORT=4000
+FRONTEND_ORIGIN=https://tonlaunchpad.vercel.app
+```
+
+### Backend API
+
+- `GET /health`
+- `GET /api/launches?status=all|live|upcoming|trending|succeeded&search=&sort=newest|oldest|liquidity|volume`
+- `GET /api/launches/:id`
+- `POST /api/launches` - called by the frontend after wallet approval. If this fails, the launch transaction is still valid and the frontend keeps a local fallback cache.
+- `GET /api/stats`
+- `GET /api/profile/:wallet`
+- `GET /api/transactions/:wallet`
+
+The backend also exposes compatibility aliases under `/api/tokens` and
+`/api/users/...` while the frontend transitions fully to launch-indexed data.
+
+### Railway / Render Notes
+
+Use the repo root as the service root. Recommended commands:
+
+```bash
+npm install
+npm run backend:prisma:generate
+npm run backend:build
+npm run backend:prisma:migrate
+npm run backend:start
+```
+
+Set `NEXT_PUBLIC_API_URL` in Vercel to your hosted backend URL with `/api`,
+for example `https://tonpad-indexer.up.railway.app/api`.
+
 ### What's in / what's out
 
 - **No mock data.** When the backend is unreachable, stats show `—`,

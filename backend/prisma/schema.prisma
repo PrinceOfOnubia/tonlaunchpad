@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LaunchStatus {
+  upcoming
+  live
+  succeeded
+  failed
+  migrated
+}
+
+enum TransactionType {
+  launch
+  contribute
+  claim
+  refund
+  migrate
+  buyback
+}
+
+model Launch {
+  id                      String        @id @default(cuid())
+  tokenName               String
+  symbol                  String
+  description             String        @default("")
+  logoUrl                 String?
+  creatorWallet           String
+  factoryAddress          String
+  tokenMasterAddress      String?       @unique
+  presalePoolAddress      String?       @unique
+  dexAdapterAddress       String
+  txHash                  String?       @unique
+  softCap                 Float
+  hardCap                 Float
+  raisedTon               Float         @default(0)
+  liquidityPercent        Float
+  buybackPercent          Float         @default(0)
+  buybackChunkPercent     Float         @default(0)
+  buybackIntervalSeconds  Int           @default(0)
+  status                  LaunchStatus  @default(upcoming)
+  startTime               DateTime
+  endTime                 DateTime
+  totalSupply             Float         @default(0)
+  decimals                Int           @default(9)
+  presaleRate             Float         @default(0)
+  minContribution         Float?
+  maxContribution         Float?
+  presaleAllocation       Float         @default(0)
+  liquidityAllocation     Float         @default(0)
+  creatorAllocation       Float         @default(0)
+  social                  Json?
+  lastIndexedAt           DateTime?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  transactions            Transaction[]
+  holders                 Holder[]
+
+  @@index([creatorWallet])
+  @@index([status])
+  @@index([createdAt])
+  @@index([symbol])
+}
+
+model Transaction {
+  id            String          @id @default(cuid())
+  launchId      String
+  walletAddress String
+  txHash        String          @unique
+  type          TransactionType
+  amountTon     Float          @default(0)
+  tokenAmount   Float          @default(0)
+  timestamp     DateTime       @default(now())
+
+  launch        Launch         @relation(fields: [launchId], references: [id], onDelete: Cascade)
+
+  @@index([walletAddress])
+  @@index([txHash])
+  @@index([type])
+  @@index([timestamp])
+}
+
+model Holder {
+  id            String   @id @default(cuid())
+  launchId      String
+  walletAddress String
+  tokenBalance  Float    @default(0)
+  updatedAt     DateTime @updatedAt
+
+  launch        Launch   @relation(fields: [launchId], references: [id], onDelete: Cascade)
+
+  @@unique([launchId, walletAddress])
+  @@index([walletAddress])
+}
+
+model StatsCache {
+  id                String   @id @default("global")
+  tokensLaunched    Int      @default(0)
+  totalLiquidityTon Float    @default(0)
+  activeHolders     Int      @default(0)
+  volume24hTon      Float    @default(0)
+  updatedAt         DateTime @updatedAt
+}

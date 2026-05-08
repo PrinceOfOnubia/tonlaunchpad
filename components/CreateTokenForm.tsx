@@ -21,6 +21,7 @@ import {
   formatInterval,
   findPresetByRate,
 } from "@/lib/buyback";
+import { api } from "@/lib/api";
 import {
   cn,
   clamp,
@@ -206,6 +207,18 @@ export function CreateTokenForm() {
         tokenAddress: null,
         token,
       });
+      api.tokens
+        .create({
+          ...payload,
+          transactionBoc: result.boc,
+          factoryAddress,
+          dexAdapterAddress: process.env.NEXT_PUBLIC_DEX_ADAPTER_ADDRESS,
+          tokenMasterAddress: null,
+          presalePoolAddress: null,
+        })
+        .catch((err) => {
+          console.warn("Indexer temporarily unavailable. Launch kept in local fallback cache.", err);
+        });
 
       setTxResult(result.boc);
       setExplorerUrl(testnetExplorerUrl({ address: factoryAddress ?? wallet }));

@@ -109,7 +109,7 @@ export interface PricePoint {
 
 export type ChartTimeframe = "1H" | "1D" | "1W" | "1M" | "ALL";
 
-export type TxKind = "contribute" | "claim" | "refund" | "buy" | "sell" | "buyback";
+export type TxKind = "launch" | "contribute" | "claim" | "refund" | "migrate" | "buyback" | "buy" | "sell";
 
 export interface Transaction {
   id: string;

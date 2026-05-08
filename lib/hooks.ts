@@ -6,10 +6,13 @@
 import useSWR, { type SWRConfiguration } from "swr";
 import { api } from "./api";
 import {
+  emptyPortfolio,
   getRecentLaunchToken,
   normalizeToken,
+  recentCreatedTokens,
   recentLaunchesPage,
   recentTrendingTokens,
+  recentWalletTransactions,
 } from "./recentLaunches";
 import type {
   ChartTimeframe,
@@ -125,7 +128,14 @@ export function useUserPortfolio(
 ) {
   return useSWR(
     wallet ? (["portfolio", wallet] as const) : null,
-    ([, w]) => api.user.portfolio(w!),
+    async ([, w]) => {
+      try {
+        return await api.user.portfolio(w!);
+      } catch (err) {
+        console.warn("Indexer temporarily unavailable; showing local portfolio fallback.", err);
+        return emptyPortfolio(w!);
+      }
+    },
     { ...defaultConfig, ...config },
   );
 }
@@ -136,7 +146,14 @@ export function useUserCreated(
 ) {
   return useSWR(
     wallet ? (["created", wallet] as const) : null,
-    ([, w]) => api.user.created(w!),
+    async ([, w]) => {
+      try {
+        return (await api.user.created(w!)).map(normalizeToken);
+      } catch (err) {
+        console.warn("Indexer temporarily unavailable; showing locally saved launches.", err);
+        return recentCreatedTokens(w!);
+      }
+    },
     { ...defaultConfig, ...config },
   );
 }
@@ -148,7 +165,14 @@ export function useUserTransactions(
 ) {
   return useSWR(
     wallet ? (["userTxs", wallet, limit] as const) : null,
-    ([, w, l]) => api.user.transactions(w!, l),
+    async ([, w, l]) => {
+      try {
+        return await api.user.transactions(w!, l);
+      } catch (err) {
+        console.warn("Indexer temporarily unavailable; showing local transaction fallback.", err);
+        return recentWalletTransactions(w!).slice(0, l);
+      }
+    },
     { ...defaultConfig, ...config },
   );
 }

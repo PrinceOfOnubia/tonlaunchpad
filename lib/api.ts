@@ -101,16 +101,34 @@ export interface PresaleTxRequest {
   validUntil: number;
 }
 
+export interface CreateLaunchRequest extends CreateTokenPayload {
+  txHash?: string;
+  transactionBoc?: string;
+  factoryAddress?: string;
+  dexAdapterAddress?: string;
+  tokenMasterAddress?: string | null;
+  presalePoolAddress?: string | null;
+}
+
+interface ProfileResponse {
+  wallet: string;
+  createdTokens: Token[];
+  transactions: Transaction[];
+  portfolio: UserPortfolio;
+}
+
 export const api = {
   tokens: {
     list: (params: TokenListParams = {}, signal?: AbortSignal) =>
-      request<Paginated<Token>>("/tokens", { query: params as Record<string, never>, signal }),
+      request<Paginated<Token>>("/launches", { query: params as Record<string, never>, signal }),
 
     trending: (limit = 6, signal?: AbortSignal) =>
-      request<Token[]>("/tokens/trending", { query: { limit }, signal }),
+      request<Paginated<Token>>("/launches", { query: { status: "trending", limit }, signal }).then(
+        (page) => page.items,
+      ),
 
     get: (id: string, signal?: AbortSignal) =>
-      request<Token>(`/tokens/${encodeURIComponent(id)}`, { signal }),
+      request<Token>(`/launches/${encodeURIComponent(id)}`, { signal }),
 
     chart: (id: string, timeframe: ChartTimeframe, signal?: AbortSignal) =>
       request<PricePoint[]>(`/tokens/${encodeURIComponent(id)}/chart`, {
@@ -124,8 +142,8 @@ export const api = {
         signal,
       }),
 
-    create: (payload: CreateTokenPayload) =>
-      request<Token>("/tokens", { method: "POST", body: payload }),
+    create: (payload: CreateLaunchRequest) =>
+      request<Token>("/launches", { method: "POST", body: payload }),
   },
 
   presale: {
@@ -166,13 +184,17 @@ export const api = {
 
   user: {
     portfolio: (wallet: string, signal?: AbortSignal) =>
-      request<UserPortfolio>(`/users/${encodeURIComponent(wallet)}/portfolio`, { signal }),
+      request<ProfileResponse>(`/profile/${encodeURIComponent(wallet)}`, { signal }).then(
+        (profile) => profile.portfolio,
+      ),
 
     created: (wallet: string, signal?: AbortSignal) =>
-      request<Token[]>(`/users/${encodeURIComponent(wallet)}/created`, { signal }),
+      request<ProfileResponse>(`/profile/${encodeURIComponent(wallet)}`, { signal }).then(
+        (profile) => profile.createdTokens,
+      ),
 
     transactions: (wallet: string, limit = 50, signal?: AbortSignal) =>
-      request<Transaction[]>(`/users/${encodeURIComponent(wallet)}/transactions`, {
+      request<Transaction[]>(`/transactions/${encodeURIComponent(wallet)}`, {
         query: { limit },
         signal,
       }),

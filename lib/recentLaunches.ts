@@ -1,4 +1,4 @@
-import type { Paginated, Token, TokenListParams } from "./types";
+import type { Paginated, Token, TokenListParams, Transaction, UserPortfolio } from "./types";
 import { DEFAULT_TOKEN_IMAGE_URL } from "./tonLaunchpad";
 
 export const RECENT_LAUNCHES_KEY = "tonpad_recent_launches";
@@ -65,6 +65,36 @@ export function recentTrendingTokens(limit: number): Token[] {
   return getRecentLaunches()
     .map((launch) => launch.token)
     .slice(0, limit);
+}
+
+export function recentCreatedTokens(wallet: string): Token[] {
+  return getRecentLaunches()
+    .filter((launch) => sameAddress(launch.creator, wallet))
+    .map((launch) => launch.token);
+}
+
+export function recentWalletTransactions(wallet: string): Transaction[] {
+  return getRecentLaunches()
+    .filter((launch) => sameAddress(launch.creator, wallet))
+    .map((launch) => ({
+      id: `launch-${launch.id}`,
+      hash: launch.transactionHash ?? launch.transactionBoc ?? launch.id,
+      kind: "launch",
+      amountTon: 0,
+      amountToken: 0,
+      timestamp: launch.createdAt,
+      wallet,
+      tokenId: launch.id,
+    }));
+}
+
+export function emptyPortfolio(wallet: string): UserPortfolio {
+  return {
+    wallet,
+    totalValueTon: 0,
+    pnlPercent: 0,
+    holdings: [],
+  };
 }
 
 export function tokenFromLaunchInput(args: {
@@ -231,4 +261,8 @@ function tokenStatus(value: unknown): Token["presale"]["status"] {
     return value;
   }
   return "upcoming";
+}
+
+function sameAddress(left: string | undefined, right: string): boolean {
+  return !!left && left.toLowerCase() === right.toLowerCase();
 }

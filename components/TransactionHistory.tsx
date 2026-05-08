@@ -73,9 +73,11 @@ function TxRow({ tx, symbol }: { tx: Transaction; symbol: string }) {
 }
 
 const META: Record<TxKind, { icon: typeof ArrowDownLeft; label: string; bg: string; fg: string }> = {
+  launch: { icon: ArrowUpRight, label: "Launch", bg: "bg-ton-100", fg: "text-ton-700" },
   contribute: { icon: ArrowDownLeft, label: "Contribute", bg: "bg-ton-100", fg: "text-ton-700" },
   claim: { icon: ArrowUpRight, label: "Claim", bg: "bg-emerald-100", fg: "text-emerald-700" },
   refund: { icon: ArrowUpRight, label: "Refund", bg: "bg-amber-100", fg: "text-amber-700" },
+  migrate: { icon: Repeat2, label: "Migrate", bg: "bg-violet-100", fg: "text-violet-700" },
   buy: { icon: ArrowDownLeft, label: "Buy", bg: "bg-emerald-100", fg: "text-emerald-700" },
   sell: { icon: ArrowUpRight, label: "Sell", bg: "bg-red-100", fg: "text-red-700" },
   buyback: { icon: Repeat2, label: "Buyback", bg: "bg-violet-100", fg: "text-violet-700" },

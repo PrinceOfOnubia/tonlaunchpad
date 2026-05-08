@@ -13,6 +13,7 @@ out
 
 # TON/Tact build
 build/
+backend/dist/
 
 # TypeScript
 tsconfig.tsbuildinfo

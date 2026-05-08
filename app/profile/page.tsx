@@ -193,9 +193,11 @@ function HistoryTab({ wallet }: { wallet: string }) {
 }
 
 const TX_LABEL: Record<TxKind, { label: string; color: string }> = {
+  launch: { label: "Launched", color: "text-ton-700" },
   contribute: { label: "Contributed", color: "text-ton-700" },
   claim: { label: "Claimed", color: "text-emerald-700" },
   refund: { label: "Refunded", color: "text-amber-700" },
+  migrate: { label: "Migrated", color: "text-violet-700" },
   buy: { label: "Bought", color: "text-emerald-700" },
   sell: { label: "Sold", color: "text-red-700" },
   buyback: { label: "Buyback", color: "text-violet-700" },
