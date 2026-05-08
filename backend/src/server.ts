@@ -34,10 +34,31 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 };
 app.use(errorHandler);
 
-const server = app.listen(config.port, () => {
-  console.log(`[api] TONPad backend listening on :${config.port}`);
-  console.log(`[api] CORS frontend origin: ${config.frontendOrigin}`);
-  startIndexer();
+console.log("[api] TONPad backend startup");
+console.log(`[api] PORT=${config.port}`);
+console.log(`[api] HOST=${config.host}`);
+console.log(`[api] NETWORK=${config.network}`);
+console.log(`[api] FACTORY_ADDRESS=${config.factoryAddress}`);
+console.log(`[api] CORS origin=${config.frontendOrigin}`);
+console.log(`[api] DATABASE_URL configured=${config.databaseUrl ? "yes" : "no"}`);
+
+async function verifyDatabase() {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    console.log("[api] database connection success");
+  } catch (err) {
+    console.error("[api] database connection failed", err);
+  }
+}
+
+const server = app.listen(config.port, config.host, () => {
+  console.log(`[api] Backend running on ${config.host}:${config.port}`);
+  void verifyDatabase();
+  try {
+    startIndexer();
+  } catch (err) {
+    console.error("[api] indexer startup failed", err);
+  }
 });
 
 async function shutdown() {
