@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
  */
 export function TonConnectProvider({ children }: { children: React.ReactNode }) {
   const [manifestUrl, setManifestUrl] = useState<string>(() => {
-    const envSite = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+    const envSite = (process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL)?.replace(/\/$/, "");
     if (envSite) return `${envSite}/tonconnect-manifest.json`;
     if (typeof window !== "undefined") {
       return `${window.location.origin}/tonconnect-manifest.json`;
@@ -29,7 +29,7 @@ export function TonConnectProvider({ children }: { children: React.ReactNode }) 
   });
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_SITE_URL) return;
+    if (process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL) return;
     const correct = `${window.location.origin}/tonconnect-manifest.json`;
     if (correct !== manifestUrl) setManifestUrl(correct);
   }, [manifestUrl]);

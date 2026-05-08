@@ -25,7 +25,9 @@ export const metadata: Metadata = {
   title: "TonPad — Launch tokens on TON",
   description:
     "Presale-driven launchpad for TON jettons with programmatic buybacks. Zero hidden fees, transparent on-chain.",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+  ),
   openGraph: {
     title: "TonPad",
     description: "Presale-driven launchpad for TON jettons with programmatic buybacks.",

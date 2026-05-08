@@ -73,7 +73,7 @@ export const createLaunchSchema = z.object({
 });
 
 export const listQuerySchema = z.object({
-  status: z.enum(["all", "live", "upcoming", "trending", "succeeded"]).optional().default("all"),
+  status: z.enum(["all", "live", "upcoming", "trending", "succeeded", "concluded"]).optional().default("all"),
   search: z.string().optional().default(""),
   sort: z.enum(["newest", "oldest", "liquidity", "volume"]).optional(),
   sortBy: z.enum(["newest", "oldest", "liquidity", "volume", "marketCap", "volume24h", "raised"]).optional(),

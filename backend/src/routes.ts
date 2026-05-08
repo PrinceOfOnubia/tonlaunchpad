@@ -22,11 +22,18 @@ router.get("/health", (_req, res) => {
 router.get("/api/launches", async (req, res, next) => {
   try {
     const query = listQuerySchema.parse(req.query);
-    await refreshStatuses();
+    try {
+      await refreshStatuses();
+    } catch (err) {
+      console.warn("[api] status refresh skipped", err);
+    }
 
     const where: Prisma.LaunchWhereInput = {};
     if (query.status !== "all" && query.status !== "trending") {
-      where.status = query.status === "succeeded" ? "succeeded" : query.status;
+      where.status =
+        query.status === "succeeded" || query.status === "concluded"
+          ? { in: ["succeeded", "migrated"] }
+          : query.status;
     }
     if (query.search) {
       where.OR = [
@@ -39,17 +46,24 @@ router.get("/api/launches", async (req, res, next) => {
 
     const sort = query.sort ?? query.sortBy ?? "newest";
     const orderBy = orderByFor(sort, query.status === "trending");
-    const [total, launches] = await Promise.all([
-      prisma.launch.count({ where }),
-      prisma.launch.findMany({
-        where,
-        orderBy,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-      }),
-    ]);
+    const [total, launches] = await safeDb(
+      () =>
+        Promise.all([
+          prisma.launch.count({ where }),
+          prisma.launch.findMany({
+            where,
+            orderBy,
+            skip: (query.page - 1) * query.limit,
+            take: query.limit,
+          }),
+        ]),
+      [0, []] as const,
+    );
 
-    const contributorCounts = await contributorCountByLaunch(launches.map((launch) => launch.id));
+    const contributorCounts = await safeDb(
+      () => contributorCountByLaunch(launches.map((launch) => launch.id)),
+      new Map<string, number>(),
+    );
     res.json({
       items: launches.map((launch) => ({
         ...launchToToken(launch),
@@ -61,6 +75,7 @@ router.get("/api/launches", async (req, res, next) => {
       total,
       page: query.page,
       limit: query.limit,
+      note: total === 0 ? "Indexer temporarily unavailable or no launches indexed yet" : undefined,
     });
   } catch (err) {
     next(err);
@@ -174,7 +189,11 @@ router.post("/api/launches", async (req, res, next) => {
 
 router.get("/api/stats", async (_req, res, next) => {
   try {
-    const stats = await updateStatsCache();
+    const stats = await safeDb(() => updateStatsCache(), null);
+    if (!stats) {
+      res.json(emptyStats("Indexer temporarily unavailable"));
+      return;
+    }
     res.json({
       tokensLaunched: stats.tokensLaunched,
       totalLiquidity: stats.totalLiquidityTon,
@@ -194,16 +213,25 @@ router.get("/api/stats", async (_req, res, next) => {
 router.get("/api/profile/:wallet", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(req.params.wallet);
-    const [created, holders, transactions, contributions] = await Promise.all([
-      prisma.launch.findMany({ where: { creatorWallet: wallet }, orderBy: { createdAt: "desc" } }),
-      prisma.holder.findMany({ where: { walletAddress: wallet, tokenBalance: { gt: 0 } }, include: { launch: true } }),
-      prisma.transaction.findMany({ where: { walletAddress: wallet }, orderBy: { timestamp: "desc" }, take: 100 }),
-      prisma.transaction.findMany({
-        where: { walletAddress: wallet, type: "contribute" },
-        include: { launch: true },
-        orderBy: { timestamp: "desc" },
-      }),
-    ]);
+    const data = await safeDb(
+      () =>
+        Promise.all([
+          prisma.launch.findMany({ where: { creatorWallet: wallet }, orderBy: { createdAt: "desc" } }),
+          prisma.holder.findMany({ where: { walletAddress: wallet, tokenBalance: { gt: 0 } }, include: { launch: true } }),
+          prisma.transaction.findMany({ where: { walletAddress: wallet }, orderBy: { timestamp: "desc" }, take: 100 }),
+          prisma.transaction.findMany({
+            where: { walletAddress: wallet, type: "contribute" },
+            include: { launch: true },
+            orderBy: { timestamp: "desc" },
+          }),
+        ]),
+      null,
+    );
+    if (!data) {
+      res.json(emptyProfile(wallet, "Indexer temporarily unavailable"));
+      return;
+    }
+    const [created, holders, transactions, contributions] = data;
 
     const claimable = contributions
       .filter((tx) => tx.launch.status === "succeeded" || tx.launch.status === "migrated")
@@ -244,11 +272,15 @@ router.get("/api/profile/:wallet", async (req, res, next) => {
 router.get("/api/transactions/:wallet", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(req.params.wallet);
-    const transactions = await prisma.transaction.findMany({
-      where: { walletAddress: wallet },
-      orderBy: { timestamp: "desc" },
-      take: 100,
-    });
+    const transactions = await safeDb(
+      () =>
+        prisma.transaction.findMany({
+          where: { walletAddress: wallet },
+          orderBy: { timestamp: "desc" },
+          take: 100,
+        }),
+      [],
+    );
     res.json(transactions.map(txToApi));
   } catch (err) {
     next(err);
@@ -271,10 +303,14 @@ router.post("/api/tokens", (req, res, next) => {
 router.get("/api/users/:wallet/portfolio", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(req.params.wallet);
-    const holders = await prisma.holder.findMany({
-      where: { walletAddress: wallet, tokenBalance: { gt: 0 } },
-      include: { launch: true },
-    });
+    const holders = await safeDb(
+      () =>
+        prisma.holder.findMany({
+          where: { walletAddress: wallet, tokenBalance: { gt: 0 } },
+          include: { launch: true },
+        }),
+      [],
+    );
     res.json({
       wallet,
       totalValueTon: 0,
@@ -296,7 +332,10 @@ router.get("/api/users/:wallet/portfolio", async (req, res, next) => {
 router.get("/api/users/:wallet/created", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(req.params.wallet);
-    const created = await prisma.launch.findMany({ where: { creatorWallet: wallet } });
+    const created = await safeDb(
+      () => prisma.launch.findMany({ where: { creatorWallet: wallet } }),
+      [],
+    );
     res.json(created.map(launchToToken));
   } catch (err) {
     next(err);
@@ -374,4 +413,45 @@ function orderByFor(sort: string, trending: boolean): Prisma.LaunchOrderByWithRe
     default:
       return [{ createdAt: "desc" }];
   }
+}
+
+async function safeDb<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await operation();
+  } catch (err) {
+    console.error("[api] database unavailable", err);
+    return fallback;
+  }
+}
+
+function emptyStats(note: string) {
+  return {
+    tokensLaunched: 0,
+    totalLiquidity: 0,
+    activeHolders: 0,
+    volume24h: 0,
+    totalTokens: 0,
+    totalLiquidityTon: 0,
+    totalUsers: 0,
+    totalVolumeTon: 0,
+    note,
+  };
+}
+
+function emptyProfile(wallet: string, note: string) {
+  return {
+    wallet,
+    createdTokens: [],
+    contributions: [],
+    transactions: [],
+    claimable: [],
+    refundable: [],
+    portfolio: {
+      wallet,
+      totalValueTon: 0,
+      pnlPercent: 0,
+      holdings: [],
+    },
+    note,
+  };
 }

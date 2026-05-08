@@ -34,6 +34,7 @@ export function StatsBar() {
       icon: TrendingUp,
       label: "24h Volume",
       value: data ? formatTon(data.totalVolumeTon, 1) : null,
+      note: data?.note,
     },
   ];
 
@@ -55,6 +56,11 @@ export function StatsBar() {
                 item.value ?? <span className="text-ink-300">—</span>
               )}
             </div>
+            {item.note && (
+              <div className="mt-0.5 text-[10px] font-medium text-amber-600">
+                Indexing soon
+              </div>
+            )}
           </div>
         </div>
       ))}

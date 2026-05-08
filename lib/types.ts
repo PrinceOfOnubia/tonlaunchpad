@@ -6,7 +6,7 @@
 
 export type PresaleStatus = "upcoming" | "live" | "succeeded" | "failed" | "finalized";
 
-export type TokenListStatus = "all" | "live" | "upcoming" | "succeeded" | "trending";
+export type TokenListStatus = "all" | "live" | "upcoming" | "succeeded" | "concluded" | "trending";
 
 export type SortBy = "newest" | "marketCap" | "volume24h" | "raised";
 
@@ -131,6 +131,7 @@ export interface PlatformStats {
   totalUsers: number;
   totalVolumeTon: number;
   totalLiquidityTon: number;
+  note?: string;
 }
 
 // -----------------------------------------------------------------------------

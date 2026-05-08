@@ -10,7 +10,7 @@ const STATUSES: { id: TokenListStatus; label: string }[] = [
   { id: "live", label: "Live" },
   { id: "upcoming", label: "Upcoming" },
   { id: "trending", label: "Trending" },
-  { id: "succeeded", label: "Succeeded" },
+  { id: "concluded", label: "Concluded" },
 ];
 
 const SORTS: { id: SortBy; label: string }[] = [
