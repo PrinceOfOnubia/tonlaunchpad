@@ -1,11 +1,15 @@
 {
-  "name": "ton-presale-launchpad-contracts",
+  "name": "tonpad",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tact --config tact.config.json --project Launchpad --quiet",
-    "test": "npm run build --silent && jest --runInBand",
-    "lint": "tsc --noEmit"
+    "dev": "next dev",
+    "build": "next build",
+    "build:contracts": "tact --config tact.config.json --project Launchpad --quiet",
+    "test": "npm run build:contracts --silent && jest --runInBand",
+    "lint": "tsc --noEmit && tsc -p tsconfig.contracts.json --noEmit",
+    "lint:frontend": "tsc --noEmit",
+    "lint:contracts": "tsc -p tsconfig.contracts.json --noEmit"
   },
   "devDependencies": {
     "@tact-lang/compiler": "1.6.13",
@@ -15,8 +19,23 @@
     "@ton/test-utils": "0.12.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.15.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "jest": "^29.7.0",
     "ts-jest": "^29.3.2",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.2.4",
+    "@tonconnect/ui-react": "^2.4.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^1.14.0",
+    "next": "^16.2.6",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.4"
   }
 }
