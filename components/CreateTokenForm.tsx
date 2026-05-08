@@ -14,7 +14,7 @@ import {
   Rocket,
   Wallet,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   BUYBACK_PRESETS,
   DEFAULT_BUYBACK_PRESET_ID,
@@ -30,6 +30,11 @@ import {
   toDatetimeLocal,
 } from "@/lib/utils";
 import type { CreateTokenPayload } from "@/lib/types";
+import {
+  buildLaunchTokenTransaction,
+  errorMessage,
+  getLaunchValidationError,
+} from "@/lib/tonLaunchpad";
 import { TokenPreview } from "./TokenPreview";
 
 type Step = 0 | 1 | 2 | 3 | 4;
@@ -85,8 +90,10 @@ export function CreateTokenForm() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deployStatus, setDeployStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deployedId, setDeployedId] = useState<string | null>(null);
+  const [txResult, setTxResult] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------
   // Validation per step
@@ -118,15 +125,34 @@ export function CreateTokenForm() {
   // Deploy
   // ---------------------------------------------------------------------
   async function handleDeploy() {
-    if (!wallet) {
-      tonConnectUI.openModal();
+    setError(null);
+    setDeployStatus(null);
+    setTxResult(null);
+
+    const formError = firstValidationError(validation);
+    if (formError) {
+      setError(formError);
       return;
     }
+
+    if (!wallet) {
+      setDeployStatus("Opening wallet connection...");
+      try {
+        tonConnectUI.openModal();
+      } catch (err) {
+        console.error("Failed to open TonConnect modal", err);
+        setError(errorMessage(err));
+      } finally {
+        setDeployStatus(null);
+      }
+      return;
+    }
+
     setSubmitting(true);
-    setError(null);
     try {
       let imageUrl: string | null = data.imageUrl;
       if (imageFile) {
+        setDeployStatus("Uploading token logo...");
         const r = await api.upload.image(imageFile);
         imageUrl = r.url;
       }
@@ -135,10 +161,30 @@ export function CreateTokenForm() {
         imageUrl,
         creator: wallet,
       };
-      const created = await api.tokens.create(payload);
-      setDeployedId(created.id);
+
+      const launchError = getLaunchValidationError(payload);
+      if (launchError) throw new Error(launchError);
+
+      setDeployStatus("Waiting for wallet approval...");
+      const transaction = buildLaunchTokenTransaction(payload, wallet);
+      const result = await tonConnectUI.sendTransaction({
+        validUntil: transaction.validUntil,
+        messages: [
+          {
+            address: transaction.to,
+            amount: transaction.amountNano,
+            payload: transaction.payload,
+          },
+        ],
+      });
+
+      setTxResult(result.boc);
+      setDeployedId(`tx-${Date.now().toString(36)}`);
+      setDeployStatus("Launch transaction submitted.");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Deployment failed");
+      console.error("Launch deployment failed", err);
+      setError(errorMessage(err));
+      setDeployStatus(null);
     } finally {
       setSubmitting(false);
     }
@@ -153,18 +199,20 @@ export function CreateTokenForm() {
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
           <CheckCircle2 size={32} />
         </div>
-        <h2 className="mt-5 font-display text-2xl font-bold text-ink-900">Token submitted!</h2>
+        <h2 className="mt-5 font-display text-2xl font-bold text-ink-900">Launch submitted!</h2>
         <p className="mt-2 text-sm text-ink-500">
-          Your token is being indexed by the platform. The presale will go live according to your
-          schedule.
+          Your wallet accepted the factory launch transaction. The token and presale pool will be
+          created on testnet once the transaction confirms.
         </p>
+        {txResult && (
+          <div className="mt-4 rounded-lg bg-ink-50 p-3 text-left">
+            <div className="text-xs font-semibold text-ink-500">Transaction result BOC</div>
+            <code className="mt-1 block break-all text-[11px] text-ink-700">
+              {txResult}
+            </code>
+          </div>
+        )}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <button
-            onClick={() => router.push(`/token/${deployedId}`)}
-            className="btn-primary"
-          >
-            View token page
-          </button>
           <button
             onClick={() => router.push("/tokens")}
             className="btn-ghost"
@@ -206,6 +254,13 @@ export function CreateTokenForm() {
             <div className="mt-5 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-200">
               <AlertCircle size={16} className="mt-0.5 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {deployStatus && (
+            <div className="mt-5 flex items-start gap-2 rounded-lg bg-ton-50 p-3 text-sm text-ton-700 ring-1 ring-ton-200">
+              <Loader2 size={16} className="mt-0.5 shrink-0 animate-spin" />
+              <span>{deployStatus}</span>
             </div>
           )}
 
@@ -1013,4 +1068,9 @@ function validate(d: CreateTokenPayload) {
 
   const allValid = Object.values(bySteps).every((c) => c.ok);
   return { bySteps, allValid };
+}
+
+function firstValidationError(validation: ReturnType<typeof validate>): string | null {
+  const failed = Object.values(validation.bySteps).find((check) => !check.ok);
+  return failed?.reason ?? null;
 }
