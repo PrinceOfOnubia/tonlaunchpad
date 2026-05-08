@@ -7,8 +7,6 @@ export const config = {
   toncenterApiKey: process.env.TONCENTER_API_KEY ?? "",
   factoryAddress:
     process.env.FACTORY_ADDRESS ?? "EQCadGgX-fT-oYaR5iyrCPHYTrXWjx1Pmcxj9_E83qoHuwoR",
-  dexAdapterAddress:
-    process.env.DEX_ADAPTER_ADDRESS ?? "EQAxVYGGW85GzumFpfoXPm6SJmSlxB-n7eNEZDYq4YH5sUcp",
   network: process.env.NETWORK ?? "testnet",
   port: Number(process.env.PORT ?? 4000),
   frontendOrigin: process.env.FRONTEND_ORIGIN ?? "https://tonlaunchpad.vercel.app",

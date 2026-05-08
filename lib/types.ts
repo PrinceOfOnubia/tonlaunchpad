@@ -11,26 +11,6 @@ export type TokenListStatus = "all" | "live" | "upcoming" | "succeeded" | "concl
 export type SortBy = "newest" | "marketCap" | "volume24h" | "raised";
 
 // -----------------------------------------------------------------------------
-// Buyback configuration — the headline feature.
-// User picks ONE preset (or "custom") + a percent slider 0-40.
-//   • `percent` → share of treasury allocated to programmatic buybacks
-//   • `rate.percent` / `rate.intervalMinutes` → cadence of each buyback tx
-//     (e.g. 10% of the buyback budget every 30 min).
-// -----------------------------------------------------------------------------
-export interface BuybackRate {
-  /** % of the buyback budget consumed per interval. 1-100 */
-  percent: number;
-  intervalMinutes: number;
-}
-
-export interface BuybackConfig {
-  enabled: boolean;
-  /** 0-40 — % of treasury allocated to buybacks */
-  percent: number;
-  rate: BuybackRate;
-}
-
-// -----------------------------------------------------------------------------
 // Presale
 // -----------------------------------------------------------------------------
 export interface PresaleInfo {
@@ -83,8 +63,7 @@ export interface Token {
   allocations: TokenAllocations;
 
   presale: PresaleInfo;
-  buyback: BuybackConfig;
-  /** % of raised TON that becomes initial DEX liquidity (typically 60-80) */
+  /** Creator's manual liquidity plan as % of raised TON. Informational only. */
   liquidityPercent: number;
 
   social: SocialLinks;
@@ -111,7 +90,7 @@ export interface PricePoint {
 
 export type ChartTimeframe = "1H" | "1D" | "1W" | "1M" | "ALL";
 
-export type TxKind = "launch" | "contribute" | "claim" | "refund" | "migrate" | "buyback" | "buy" | "sell";
+export type TxKind = "launch" | "contribute" | "claim" | "refund" | "treasury" | "buy" | "sell";
 
 export interface Transaction {
   id: string;
@@ -132,7 +111,7 @@ export interface PlatformStats {
   totalTokens: number;
   totalUsers: number;
   totalVolumeTon: number;
-  totalLiquidityTon: number;
+  totalRaisedTon: number;
   note?: string;
 }
 
@@ -177,7 +156,6 @@ export interface CreateTokenPayload {
     minContribution?: number;
     maxContribution?: number;
   };
-  buyback: BuybackConfig;
   liquidityPercent: number;
   social: SocialLinks;
   /** Connected wallet — set automatically before submit */

@@ -64,7 +64,7 @@ router.get("/api/launches", async (req, res, next) => {
     if (query.status !== "all" && query.status !== "trending") {
       where.status =
         query.status === "succeeded" || query.status === "concluded"
-          ? { in: ["succeeded", "migrated"] }
+          ? "succeeded"
           : query.status;
     }
     if (query.search) {
@@ -162,7 +162,6 @@ router.post("/api/launches", async (req, res, next) => {
     });
 
     const factoryAddress = body.factoryAddress ?? config.factoryAddress;
-    const dexAdapterAddress = body.dexAdapterAddress ?? config.dexAdapterAddress;
     const status = computeStatus({
       startTime: body.presale.startTime,
       endTime: body.presale.endTime,
@@ -183,14 +182,10 @@ router.post("/api/launches", async (req, res, next) => {
         factoryAddress,
         tokenMasterAddress: body.tokenMasterAddress ?? null,
         presalePoolAddress: body.presalePoolAddress ?? null,
-        dexAdapterAddress,
         txHash: body.txHash,
         softCap: body.presale.softCap,
         hardCap: body.presale.hardCap,
         liquidityPercent: body.liquidityPercent,
-        buybackPercent: body.buyback.enabled ? body.buyback.percent : 0,
-        buybackChunkPercent: body.buyback.enabled ? body.buyback.rate.percent : 0,
-        buybackIntervalSeconds: Math.round(body.buyback.rate.intervalMinutes * 60),
         status,
         startTime: body.presale.startTime,
         endTime: body.presale.endTime,
@@ -253,14 +248,14 @@ router.get("/api/stats", async (_req, res, next) => {
     }
     res.json({
       tokensLaunched: stats.tokensLaunched,
-      totalLiquidity: stats.totalLiquidityTon,
+      totalRaised: stats.totalRaisedTon,
       activeHolders: stats.activeHolders,
       volume24h: stats.volume24hTon,
       totalTokens: stats.tokensLaunched,
-      totalLiquidityTon: stats.totalLiquidityTon,
+      totalRaisedTon: stats.totalRaisedTon,
       totalUsers: stats.activeHolders,
       totalVolumeTon: stats.volume24hTon,
-      note: stats.volume24hTon === 0 ? "DEX volume indexing soon" : undefined,
+      note: stats.volume24hTon === 0 ? "Volume data coming soon" : undefined,
     });
   } catch (err) {
     next(err);
@@ -291,7 +286,7 @@ router.get("/api/profile/:wallet", async (req, res, next) => {
     const [created, holders, transactions, contributions] = data;
 
     const claimable = contributions
-      .filter((tx) => tx.launch.status === "succeeded" || tx.launch.status === "migrated")
+      .filter((tx) => tx.launch.status === "succeeded")
       .map((tx) => ({ launch: launchToToken(tx.launch), amountTon: tx.amountTon }));
     const refundable = contributions
       .filter((tx) => tx.launch.status === "failed")
@@ -403,9 +398,7 @@ router.get("/api/users/:wallet/transactions", (req, res, next) => {
 });
 
 async function refreshStatuses() {
-  const launches = await prisma.launch.findMany({
-    where: { status: { not: "migrated" } },
-  });
+  const launches = await prisma.launch.findMany();
   await Promise.all(
     launches.map((launch) => {
       const status = computeStatus(launch);
@@ -429,12 +422,12 @@ async function contributorCountByLaunch(launchIds: string[]) {
 
 async function updateStatsCache() {
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [tokensLaunched, totalLiquidity, activeHolders, volume] = await Promise.all([
+  const [tokensLaunched, totalRaised, activeHolders, volume] = await Promise.all([
     prisma.launch.count(),
     prisma.launch.aggregate({ _sum: { raisedTon: true } }),
     prisma.holder.groupBy({ by: ["walletAddress"], where: { tokenBalance: { gt: 0 } } }),
     prisma.transaction.aggregate({
-      where: { timestamp: { gte: dayAgo }, type: { in: ["contribute", "migrate", "buyback"] } },
+      where: { timestamp: { gte: dayAgo }, type: { in: ["contribute", "treasury"] } },
       _sum: { amountTon: true },
     }),
   ]);
@@ -443,13 +436,13 @@ async function updateStatsCache() {
     create: {
       id: "global",
       tokensLaunched,
-      totalLiquidityTon: totalLiquidity._sum.raisedTon ?? 0,
+      totalRaisedTon: totalRaised._sum.raisedTon ?? 0,
       activeHolders: activeHolders.length,
       volume24hTon: volume._sum.amountTon ?? 0,
     },
     update: {
       tokensLaunched,
-      totalLiquidityTon: totalLiquidity._sum.raisedTon ?? 0,
+      totalRaisedTon: totalRaised._sum.raisedTon ?? 0,
       activeHolders: activeHolders.length,
       volume24hTon: volume._sum.amountTon ?? 0,
     },
@@ -461,8 +454,6 @@ function orderByFor(sort: string, trending: boolean): Prisma.LaunchOrderByWithRe
   switch (sort) {
     case "oldest":
       return [{ createdAt: "asc" }];
-    case "liquidity":
-      return [{ raisedTon: "desc" }];
     case "volume":
     case "volume24h":
     case "raised":
@@ -484,11 +475,11 @@ async function safeDb<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
 function emptyStats(note: string) {
   return {
     tokensLaunched: 0,
-    totalLiquidity: 0,
+    totalRaised: 0,
     activeHolders: 0,
     volume24h: 0,
     totalTokens: 0,
-    totalLiquidityTon: 0,
+    totalRaisedTon: 0,
     totalUsers: 0,
     totalVolumeTon: 0,
     note,

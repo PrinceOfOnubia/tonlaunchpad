@@ -9,7 +9,6 @@ import { cn, formatCompact, formatPercent, formatPrice, formatTon, shortAddress 
 import { TokenChart } from "@/components/TokenChart";
 import { PresalePanel } from "@/components/PresalePanel";
 import { PresaleProgress } from "@/components/PresaleProgress";
-import { BuybackBadge } from "@/components/BuybackBadge";
 import { TransactionHistory } from "@/components/TransactionHistory";
 import type { Token } from "@/lib/types";
 import { useEffectivePresale } from "@/lib/presaleStatus";
@@ -66,8 +65,6 @@ function TokenContent({ token }: { token: Token }) {
         <div className="space-y-6 lg:col-span-2">
           {!isLive && <TokenChart tokenId={token.id} />}
           {isLive && <PresaleProgress presale={presale} variant="detailed" />}
-
-          <BuybackBadge buyback={effectiveToken.buyback} variant="card" />
 
           <Tokenomics token={effectiveToken} />
 
@@ -212,7 +209,7 @@ function Tokenomics({ token }: { token: Token }) {
         <div className="space-y-2.5">
           <Row label="Total supply" value={token.totalSupply.toLocaleString()} />
           <Row label="Decimals" value={String(token.decimals)} />
-          <Row label="Liquidity locked" value={`${token.liquidityPercent}% of raise`} />
+          <Row label="Manual liquidity plan" value={`${token.liquidityPercent}% of raise`} />
         </div>
         <div className="space-y-2.5">
           <AllocBar label="Presale" pct={a.presale} color="bg-ton-500" />

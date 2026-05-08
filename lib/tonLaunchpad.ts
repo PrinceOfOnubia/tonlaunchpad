@@ -8,8 +8,9 @@ export interface LaunchTransaction {
   validUntil: number;
 }
 
-const LAUNCH_TOKEN_OPCODE = 1954225128;
+const LAUNCH_TOKEN_OPCODE = 2254979422;
 const CONTRIBUTE_OPCODE = 443500403;
+const CREATOR_CLAIM_TREASURY_OPCODE = 1459145241;
 const LAUNCH_VALUE_TON = "1";
 export const DEFAULT_TOKEN_IMAGE_URL = "https://tonlaunchpad.vercel.app/icon.png";
 const DEFAULT_TOKEN_METADATA_URL = "https://tonlaunchpad.vercel.app/default-token-metadata.json";
@@ -21,10 +22,6 @@ export function buildLaunchTokenTransaction(
   const factoryAddress = requiredAddress(
     process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
     "NEXT_PUBLIC_FACTORY_ADDRESS",
-  );
-  const dexAdapterAddress = requiredAddress(
-    process.env.NEXT_PUBLIC_DEX_ADAPTER_ADDRESS,
-    "NEXT_PUBLIC_DEX_ADAPTER_ADDRESS",
   );
   const creatorAddress = requiredAddress(creatorWallet, "connected wallet address");
   const config = normalizeLaunchConfig(form);
@@ -51,31 +48,18 @@ export function buildLaunchTokenTransaction(
       b2.storeAddress(creatorAddress);
 
       const b3 = new Builder();
-      b3.storeAddress(dexAdapterAddress);
-      b3.storeAddress(creatorAddress);
       b3.storeInt(config.presaleRate, 257);
+      b3.storeInt(config.softCap, 257);
+      b3.storeInt(config.hardCap, 257);
 
       const b4 = new Builder();
-      b4.storeInt(config.softCap, 257);
-      b4.storeInt(config.hardCap, 257);
       b4.storeInt(config.minContribution, 257);
-
+      b4.storeInt(config.maxContribution, 257);
+      b4.storeInt(BigInt(config.startTime), 257);
       const b5 = new Builder();
-      b5.storeInt(config.maxContribution, 257);
-      b5.storeInt(BigInt(config.startTime), 257);
       b5.storeInt(BigInt(config.endTime), 257);
+      b5.storeInt(BigInt(config.liquidityPercentOfRaised), 257);
 
-      const b6 = new Builder();
-      b6.storeInt(BigInt(config.liquidityPercentOfRaised), 257);
-      b6.storeBit(config.buybackEnabled);
-      b6.storeInt(BigInt(config.buybackPercentBps), 257);
-      b6.storeInt(BigInt(config.buybackChunkBps), 257);
-
-      const b7 = new Builder();
-      b7.storeInt(BigInt(config.buybackIntervalSeconds), 257);
-
-      b6.storeRef(b7.endCell());
-      b5.storeRef(b6.endCell());
       b4.storeRef(b5.endCell());
       b3.storeRef(b4.endCell());
       b2.storeRef(b3.endCell());
@@ -106,11 +90,21 @@ export function buildContributeTransaction(poolAddress: string, amountTon: numbe
   };
 }
 
+export function buildCreatorClaimTreasuryTransaction(poolAddress: string): LaunchTransaction {
+  const pool = requiredAddress(poolAddress, "presale pool address");
+  const body = beginCell().storeUint(CREATOR_CLAIM_TREASURY_OPCODE, 32).endCell();
+  return {
+    to: pool.toString(),
+    amountNano: toNano("0.05").toString(),
+    payload: bytesToBase64(body.toBoc()),
+    validUntil: Math.floor(Date.now() / 1000) + 10 * 60,
+  };
+}
+
 export function getLaunchValidationError(form: CreateTokenPayload): string | null {
   try {
     normalizeLaunchConfig(form);
     requiredAddress(process.env.NEXT_PUBLIC_FACTORY_ADDRESS, "NEXT_PUBLIC_FACTORY_ADDRESS");
-    requiredAddress(process.env.NEXT_PUBLIC_DEX_ADAPTER_ADDRESS, "NEXT_PUBLIC_DEX_ADAPTER_ADDRESS");
     return null;
   } catch (err) {
     return errorMessage(err);
@@ -166,9 +160,6 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
   const maxContribution = positiveNumber(form.presale.maxContribution ?? hardCap, "Max contribution");
   const startTime = unixSeconds(form.presale.startTime, "Start time");
   const endTime = unixSeconds(form.presale.endTime, "End time");
-  const buybackPercentBps = Math.round(nonNegativeNumber(form.buyback.percent, "Buyback percent") * 100);
-  const buybackChunkBps = Math.round(nonNegativeNumber(form.buyback.rate.percent, "Buyback chunk") * 100);
-
   if (!name) throw new Error("Token name is required.");
   if (symbol.length < 2 || symbol.length > 10) {
     throw new Error("Symbol must be 2-10 characters.");
@@ -184,15 +175,6 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
   if (form.liquidityPercent < 0 || form.liquidityPercent > 100) {
     throw new Error("Liquidity percent of raised TON must be between 0 and 100.");
   }
-  const buybackEnabled = form.buyback.enabled && buybackPercentBps > 0;
-  if (buybackPercentBps > 4000) throw new Error("Buyback percent must be 0-40%.");
-  if (buybackEnabled && buybackChunkBps > buybackPercentBps) {
-    throw new Error("Buyback chunk cannot be larger than the total buyback budget.");
-  }
-  if (form.buyback.rate.intervalMinutes < 1) {
-    throw new Error("Buyback interval must be at least 1 minute.");
-  }
-
   return {
     name,
     symbol,
@@ -215,12 +197,6 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
     startTime,
     endTime,
     liquidityPercentOfRaised: integerInRange(form.liquidityPercent, "Liquidity percent", 0, 100),
-    buybackEnabled,
-    buybackPercentBps: buybackEnabled ? buybackPercentBps : 0,
-    buybackChunkBps: buybackEnabled ? buybackChunkBps : 0,
-    buybackIntervalSeconds: Math.round(
-      positiveNumber(form.buyback.rate.intervalMinutes, "Buyback interval") * 60,
-    ),
   };
 }
 

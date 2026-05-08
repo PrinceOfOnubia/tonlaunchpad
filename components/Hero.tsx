@@ -13,15 +13,15 @@ export function Hero() {
 
         {/* Title */}
         <h1 className="mt-6 font-display text-4xl font-bold leading-[1.05] tracking-tight text-ink-900 sm:text-6xl lg:text-[5.25rem]">
-          Launch tokens on <span className="text-ton-500">TON</span>
+          Fair and transparent <span className="text-ton-500">TON</span>
           <br className="hidden sm:block" />
-          <span className="block sm:inline"> in seconds, not days.</span>
+          <span className="block sm:inline"> presales.</span>
         </h1>
 
         {/* Subtitle */}
         <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-ink-500 sm:text-lg">
-          Fair-launch presales, instant DEX liquidity, automated buybacks — all
-          on the fastest blockchain in the universe.
+          Create a token, run a capped presale, let contributors claim after success, and handle
+          liquidity manually with a simpler on-chain flow.
         </p>
 
         {/* CTAs */}
@@ -45,8 +45,8 @@ export function Hero() {
         {/* Trust signals */}
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-ink-500">
           <TrustSignal color="bg-emerald-500" label="Audited contracts" />
-          <TrustSignal color="bg-ton-500" label="Locked liquidity" />
-          <TrustSignal color="bg-amber-500" label="Auto buybacks" />
+          <TrustSignal color="bg-ton-500" label="Manual liquidity" />
+          <TrustSignal color="bg-amber-500" label="Clear platform fees" />
         </div>
       </div>
     </section>

@@ -5,7 +5,11 @@ import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useMyContribution } from "@/lib/hooks";
-import { buildContributeTransaction, normalizeTonConnectError } from "@/lib/tonLaunchpad";
+import {
+  buildContributeTransaction,
+  buildCreatorClaimTreasuryTransaction,
+  normalizeTonConnectError,
+} from "@/lib/tonLaunchpad";
 import { hardCapRemaining, useEffectivePresale } from "@/lib/presaleStatus";
 import { cn, formatTon, timeUntil } from "@/lib/utils";
 import type { Token } from "@/lib/types";
@@ -38,6 +42,7 @@ export function PresalePanel({ token }: Props) {
   const belowMin = min !== undefined && validAmount && numAmount < min;
   const aboveMax = max !== undefined && validAmount && numAmount > max;
   const aboveRemaining = validAmount && numAmount > remaining;
+  const isCreator = !!wallet && wallet.toLowerCase() === token.creator.toLowerCase();
 
   async function send(boc: { to: string; amountNano: string; payload: string; validUntil: number }) {
     return tonConnectUI.sendTransaction({
@@ -126,6 +131,29 @@ export function PresalePanel({ token }: Props) {
     }
   }
 
+  async function handleClaimTreasury() {
+    if (!wallet) {
+      tonConnectUI.openModal();
+      return;
+    }
+    const poolAddress = token.presalePoolAddress;
+    if (!poolAddress) {
+      setError("Presale setup is finalizing. Please try again in a moment.");
+      return;
+    }
+    setBusy("claim");
+    setError(null);
+    try {
+      const result = await send(buildCreatorClaimTreasuryTransaction(poolAddress));
+      setTxHash(result.boc);
+    } catch (err) {
+      console.error("Creator treasury claim failed", err);
+      setError(normalizeTonConnectError(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Rendering by status
   // -------------------------------------------------------------------------
@@ -186,6 +214,24 @@ export function PresalePanel({ token }: Props) {
         </div>
       )}
 
+      {presale.status === "succeeded" && isCreator && (
+        <div className="space-y-3 rounded-xl bg-ton-50 p-4 ring-1 ring-ton-200">
+          <div>
+            <div className="text-sm font-semibold text-ton-800">Creator treasury</div>
+            <div className="mt-1 text-xs text-ton-700">
+              Claim 95% of the raised TON. TONPad receives the 5% platform fee on-chain.
+            </div>
+          </div>
+          <button
+            onClick={handleClaimTreasury}
+            disabled={busy !== null}
+            className="btn-primary w-full"
+          >
+            {busy === "claim" ? <Spinner /> : "Claim Treasury"}
+          </button>
+        </div>
+      )}
+
       {presale.status === "failed" && myContrib && myContrib.amountTon > 0 && (
         <div className="space-y-3">
           <div className="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200">
@@ -207,7 +253,7 @@ export function PresalePanel({ token }: Props) {
       )}
 
       {presale.status === "finalized" && (
-        <InfoBox>Presale finalized — token is live on DEX. Trading happens off-platform.</InfoBox>
+        <InfoBox>Presale finalized. The creator handles liquidity manually off-platform.</InfoBox>
       )}
 
       {error && (

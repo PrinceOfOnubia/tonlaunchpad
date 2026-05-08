@@ -1,6 +1,6 @@
 # Frontend Integration
 
-The frontend should launch through `LaunchpadFactory`, not by deploying pools directly.
+TONPad uses a classic manual-liquidity presale flow. The frontend launches through `LaunchpadFactory`; it never deploys pools directly.
 
 ## Factory Launch Message
 
@@ -11,15 +11,13 @@ Fields:
 - `name: string`
 - `symbol: string`
 - `description: string`
-- `metadata: Cell` - logo/social metadata encoded off-chain
+- `metadata: Cell` - TEP-64 off-chain metadata cell
 - `totalSupply: bigint`
 - `decimals: bigint`
 - `presalePercent: bigint`
-- `liquidityPercentTokens: bigint`
+- `liquidityPercentTokens: bigint` - creator-managed liquidity allocation
 - `creatorPercent: bigint`
-- `treasuryAddress: Address`
-- `dexAdapter: Address`
-- `buybackWallet: Address`
+- `treasuryAddress: Address` - creator treasury receiver
 - `presaleRate: bigint` - token nano-units per 1 TON
 - `softCap: bigint` - nanotons
 - `hardCap: bigint` - nanotons
@@ -27,19 +25,11 @@ Fields:
 - `maxContribution: bigint` - nanotons
 - `startTime: bigint` - Unix seconds
 - `endTime: bigint` - Unix seconds
-- `liquidityPercentOfRaised: bigint` - 0 to 100
-- `buybackEnabled: boolean`
-- `buybackPercentBps: bigint` - 0 to 4000
-- `buybackChunkBps: bigint` - must be `<= buybackPercentBps`
-- `buybackIntervalSeconds: bigint`
+- `liquidityPercentOfRaised: bigint` - informational manual-liquidity plan, 0 to 100
 
-Frontend conversion for buyback cadence:
+Frontend must show this notice before wallet approval:
 
-```ts
-buybackPercentBps = buyback.percent * 100
-buybackChunkBps = Math.floor(buybackPercentBps * buyback.rate.percent / 100)
-buybackIntervalSeconds = buyback.rate.intervalMinutes * 60
-```
+> Platform fee: 5% of raised TON + 1% of presale tokens.
 
 ## Factory Getters
 
@@ -53,67 +43,52 @@ buybackIntervalSeconds = buyback.rate.intervalMinutes * 60
 | Message | Sender | Value | Purpose |
 | --- | --- | --- | --- |
 | `Contribute` | User | Contribution amount in TON | Active sale contribution |
-| `MigrateLiquidity` | Anyone | Gas | Finalize success and send liquidity to `DexAdapter` |
-| `ClaimTokens` | User | Gas | Claim presale token allocation after migration |
-| `Refund` | User | Gas | Refund failed/cancelled sale |
-| `RecoverFailedTokens` | Creator | Gas | Recover unsold pool tokens after failed/cancelled sale |
-| `WithdrawTreasury` | Treasury | Gas | Withdraw raised TON excluding liquidity and buyback reserves |
-| `ExecuteBuyback` | Anyone | Gas | Execute scheduled buyback through `DexAdapter` |
+| `ClaimTokens` | User | Gas | Claim buyer token allocation after successful sale |
+| `Refund` | User | Gas | Refund failed or cancelled sale |
+| `CreatorClaimTreasury` | Creator or treasury | Gas | Claim creator TON treasury after success |
+| `WithdrawTreasury` | Creator or treasury | Gas | Compatibility alias for creator treasury claim |
+| `RecoverFailedTokens` | Creator | Gas | Recover unsold buyer tokens after failed/cancelled sale |
 | `Pause` | Creator | Gas | Pause contributions |
 | `Unpause` | Creator | Gas | Resume contributions |
-| `CancelSale` | Creator | Gas | Cancel before migration |
+| `CancelSale` | Creator | Gas | Cancel before finalization |
 
 ## Pool Getters
 
 | Getter | Args | Returns |
 | --- | --- | --- |
-| `getConfig()` | none | Pool config including token, treasury, DEX, caps, times, allocations, buyback settings |
-| `getState()` | none | `totalRaised`, `totalSold`, `finalized`, `failed`, `cancelled`, `paused`, `migrationDone`, `liquidityTON`, `buybackReserve`, `buybackReleased`, `treasuryWithdrawn` |
+| `getConfig()` | none | Factory, creator, token, treasury, platform treasury, caps, times, allocations, platform token fee |
+| `getState()` | none | `totalRaised`, `totalSold`, `finalized`, `failed`, `cancelled`, `paused`, `treasuryClaimed`, `platformTonFeePaid`, `platformTonFee`, `creatorClaimable` |
 | `getContribution(user)` | `Address` | User contribution in nanotons |
 | `getClaimed(user)` | `Address` | Whether user has claimed |
 
-## Jetton Getters
-
-| Getter | Args | Returns |
-| --- | --- | --- |
-| `getWalletAddress(owner)` | `Address` | Deterministic Jetton wallet address for holder/pool/adapter |
-| `getJettonData()` | none | TEP-74 style master data: supply, mintable flag, admin, content, wallet code |
-| `getTokenMetadata()` | none | Frontend metadata: name, symbol, description, metadata cell, total supply, decimals |
-
-## Jetton Wallet Getters
-
-| Getter | Args | Returns |
-| --- | --- | --- |
-| `getWalletData()` | none | TEP-74 style wallet data: balance, owner, master, wallet code |
-
-## DEX Adapter
-
-`DexAdapter` is intentionally a DEX stub. It receives TON and real Jettons via its Jetton wallet; production DeDust/STON.fi routing should be implemented behind this adapter boundary.
-
-Messages:
-
-- `AddLiquidity { token, tokenAmount, requester }`
-- `ExecuteDexBuyback { token, requester }`
-
-Getter:
-
-- `getDexState()` returns liquidity TON/tokens, buyback TON, migration count, buyback count.
-
 ## Frontend State Rules
 
-- Show contribute when sale is active and not paused/cancelled/migrated.
-- Show migration when `now > endTime && totalRaised >= softCap`, or hard cap has been reached.
-- Show claim only when `migrationDone === true`.
-- Show refund when `cancelled || (now > endTime && totalRaised < softCap)`.
-- Show treasury withdrawal only when `migrationDone === true`.
-- Show buyback execution only when `migrationDone === true` and scheduled buyback TON is available.
+- `upcoming`: `now < startTime`
+- `live`: `startTime <= now <= endTime`
+- `succeeded`: sale ended or hard cap filled, and `totalRaised >= softCap`
+- `failed`: sale ended and `totalRaised < softCap`
+- Show contribute only while live and not paused/cancelled.
+- Show claim after success.
+- Show refund after failure/cancellation.
+- Show `Claim Treasury` to the creator after success.
+- Do not show post-sale automation controls.
+
+## Backend Integration
+
+After wallet approval, immediately call:
+
+```http
+POST /api/launches
+```
+
+Save optimistic metadata even before token/pool addresses are reconciled. The backend later updates token master, presale pool, raised amount, claim/refund/treasury transaction state, and stats.
 
 ## Testnet Deployment
 
 ```bash
 npm install
-npm run build
+npm run contract:build
 npx blueprint run deployLaunchpad --testnet
 ```
 
-Use the deployed `LaunchpadFactory` address as the backend launch target and the deployed `DexAdapter` address as the launch config DEX adapter.
+Use the deployed `LaunchpadFactory` address as `NEXT_PUBLIC_FACTORY_ADDRESS` and `FACTORY_ADDRESS`.

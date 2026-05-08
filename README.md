@@ -1,41 +1,39 @@
 # TonPad
 
-Production-ready TON presale launchpad with programmatic buybacks (0–40%).
-Next.js 14 frontend + Tact smart contracts.
+Fair and transparent TON presales.
 
----
+TonPad is a classic manual-liquidity launchpad: creators deploy a Jetton and presale pool, users contribute TON during the sale window, contributors claim tokens after a successful sale, and failed sales are refundable. Creators handle liquidity externally after claiming treasury funds.
+
+## Platform Fees
+
+Fees are enforced by the smart contract on successful presales:
+
+- `5%` of total TON raised goes to the platform treasury.
+- `1%` of the presale token allocation goes to the platform Jetton wallet.
+- The creator can claim `95%` of raised TON after success.
+- Failed presales do not pay the TON platform fee.
+
+Example: a sale raising `1000 TON` pays `50 TON` to the platform and `950 TON` to the creator treasury. A `500,000,000` token presale allocation sends `5,000,000` tokens to the platform and leaves `495,000,000` tokens for buyers.
 
 ## Frontend Quick Start
 
 ```bash
-# 1. Install
 npm install
-
-# 2. Configure
 cp .env.example .env.local
-# Fill in NEXT_PUBLIC_API_URL (your backend) — at minimum.
-# NEXT_PUBLIC_SITE_URL is optional in dev (auto-detected from window).
-
-# 3. Run
-npm run dev      # http://localhost:3000
+npm run dev
 ```
 
-## Backend / Indexer Quick Start
+Set `NEXT_PUBLIC_API_URL` to the hosted backend `/api` URL for live token discovery.
 
-The MVP backend lives in `backend/` and provides token discovery, stats,
-profiles, transactions, and a TON testnet reconciliation loop.
+## Backend / Indexer
+
+The backend lives in `backend/` and provides launch persistence, token discovery, stats, profiles, transactions, upload hosting, metadata hosting, and TON testnet reconciliation.
 
 ```bash
-# 1. Configure env
 cp .env.example .env
-# Fill DATABASE_URL and TONCENTER_API_KEY.
-
-# 2. Generate Prisma client and migrate Postgres
 npm run backend:prisma:generate
 npm run backend:prisma:migrate
-
-# 3. Run the API/indexer locally
-npm run backend:dev      # http://localhost:4000
+npm run backend:dev
 ```
 
 Required backend env:
@@ -44,134 +42,68 @@ Required backend env:
 DATABASE_URL=
 TONCENTER_ENDPOINT=https://testnet.toncenter.com/api/v2/jsonRPC
 TONCENTER_API_KEY=
-FACTORY_ADDRESS=EQCadGgX-fT-oYaR5iyrCPHYTrXWjx1Pmcxj9_E83qoHuwoR
-DEX_ADAPTER_ADDRESS=EQAxVYGGW85GzumFpfoXPm6SJmSlxB-n7eNEZDYq4YH5sUcp
+FACTORY_ADDRESS=
 NETWORK=testnet
 PORT=4000
 FRONTEND_ORIGIN=https://tonlaunchpad.vercel.app
+BACKEND_PUBLIC_URL=
+PUBLIC_UPLOAD_BASE_URL=
+UPLOAD_DIR=backend/uploads
 ```
 
-### Backend API
+## Backend API
 
 - `GET /health`
-- `GET /api/launches?status=all|live|upcoming|trending|succeeded&search=&sort=newest|oldest|liquidity|volume`
+- `GET /api/launches?status=all|live|upcoming|trending|succeeded|concluded&search=&sort=newest|oldest|volume`
 - `GET /api/launches/:id`
-- `POST /api/launches` - called by the frontend after wallet approval. If this fails, the launch transaction is still valid and the frontend keeps a local fallback cache.
+- `POST /api/launches`
 - `GET /api/stats`
 - `GET /api/profile/:wallet`
 - `GET /api/transactions/:wallet`
+- `POST /api/upload/image`
+- `POST /api/metadata`
 
-The backend also exposes compatibility aliases under `/api/tokens` and
-`/api/users/...` while the frontend transitions fully to launch-indexed data.
+`POST /api/launches` is called immediately after wallet approval. If the API is temporarily unavailable, the on-chain launch transaction remains valid and the frontend keeps a local fallback.
 
-### Railway / Render Notes
+## Contracts
 
-Use the repo root as the service root. Recommended commands:
+Compiled from `contracts/Launchpad.tact`:
 
-```bash
-npm install
-npm run backend:prisma:generate
-npm run backend:build
-npm run backend:prisma:migrate
-npm run backend:start
-```
+- `LaunchpadFactory`: receives the create config, deploys the Jetton master and `PresalePool`, mints buyer allocation to the pool, platform token fee to the platform treasury, and creator-managed tokens to the creator.
+- `LaunchpadJettonMaster`: TEP-74 compatible Jetton master.
+- `JettonWallet`: deterministic TEP-74 compatible Jetton wallet.
+- `PresalePool`: accepts contributions, enforces caps/windows, handles user claims, refunds, failed-token recovery, and creator treasury claims.
 
-Set `NEXT_PUBLIC_API_URL` in Vercel to your hosted backend URL with `/api`,
-for example `https://tonpad-indexer.up.railway.app/api`.
+## Presale Flow
 
-### What's in / what's out
+1. Creator submits `LaunchToken` to `LaunchpadFactory`.
+2. Factory deploys Jetton master and pool.
+3. Factory mints:
+   - `99%` of the presale allocation to the pool for buyers.
+   - `1%` of the presale allocation to the platform treasury.
+   - creator allocation plus manual-liquidity allocation to the creator.
+4. Users contribute TON while the sale is live.
+5. If `totalRaised >= softCap`, users can claim Jettons directly from the pool.
+6. Creator calls `CreatorClaimTreasury` or `WithdrawTreasury`.
+7. Pool sends `5%` of raised TON to the platform treasury and `95%` to creator treasury.
+8. If the sale fails or is cancelled, users refund TON and creator can recover unsold buyer tokens.
 
-- **No mock data.** When the backend is unreachable, stats show `—`,
-  token lists show "no tokens yet" empty states. The UI never lies.
-- **TON wallet via TonConnect.** The provider is initialized synchronously,
-  so the "Connect Wallet" button works on first render.
-- **Production-only data flow.** Every component pulls from `lib/api.ts`
-  (typed fetch + SWR). Configure `NEXT_PUBLIC_API_URL` to wire the backend.
-
-### TonConnect manifest — important for production
-
-`public/tonconnect-manifest.json` defaults to a placeholder URL. Before
-launching, replace `url` with your real production domain. The wallet
-displays this to the user during the connection prompt:
-
-```json
-{
-  "url": "https://your-real-domain.com",
-  "name": "TonPad",
-  "iconUrl": "https://your-real-domain.com/icon.png"
-}
-```
-
-Also set `NEXT_PUBLIC_SITE_URL` to the same domain so the manifest URL
-the wallet fetches matches the deployed location.
-
-### Deployment (Vercel)
-
-1. Push to GitHub.
-2. Import the repo into Vercel.
-3. Set env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`.
-4. Update `public/tonconnect-manifest.json` `url` to your Vercel domain.
-
----
-
-# Contracts
-
-Tact + Blueprint/Sandbox contract layer for the TonPad frontend launch flow.
-
-The current launchpad layer has five contracts compiled from `contracts/Launchpad.tact`:
-
-- `LaunchpadFactory` - receives the frontend create config, deploys a token and pool, mints allocations, and stores launch records.
-- `LaunchpadJettonMaster` - TEP-74 compatible Jetton master for each launched token.
-- `JettonWallet` - deterministic TEP-74 compatible Jetton wallet for holders, pools, and adapters.
-- `PresalePool` - accepts TON, enforces caps/windows, owns presale and liquidity token allocations, migrates liquidity, enables claims/refunds, and manages treasury/buyback reserves.
-- `DexAdapter` - DEX boundary stub. It records liquidity migrations and buyback executions. Full DeDust or STON.fi integration should live behind this interface.
-
-## Frontend Launch Flow
-
-1. Frontend submits `LaunchToken` to `LaunchpadFactory`.
-2. Factory validates allocation totals, caps, schedule, liquidity percent, and buyback limits.
-3. Factory deploys `LaunchpadJettonMaster`.
-4. Factory deploys `PresalePool`.
-5. Factory mints:
-   - presale allocation + liquidity allocation to the `PresalePool` Jetton wallet
-   - creator allocation to the creator Jetton wallet
-6. Users contribute TON to `PresalePool` during the active window.
-7. If `totalRaised >= softCap`, anyone can call `MigrateLiquidity` after the sale ends, or immediately once hard cap is filled.
-8. Pool calculates:
-   - `liquidityTON = totalRaised * liquidityPercentOfRaised / 100`
-   - `treasuryTON = totalRaised - liquidityTON`
-   - `buybackReserve = treasuryTON * buybackPercentBps / 10000`
-9. Pool sends `liquidityTON` and real Jettons from the pool Jetton wallet to the `DexAdapter` Jetton wallet, then sets `migrationDone = true`.
-10. Contributors can claim real Jettons to their Jetton wallets only after `migrationDone`.
-11. Treasury can withdraw only after migration, and never receives liquidity TON or buyback reserve.
-12. If the sale fails, contributors can refund and creator can recover unsold token allocations. No migration or buyback is allowed.
-
-## Buybacks
-
-Buybacks are reserved TON routed through `DexAdapter`.
-
-- `buybackPercentBps` must be `<= 4000`.
-- `buybackChunkBps` must be `<= buybackPercentBps`.
-- Buybacks start only after liquidity migration/listing.
-- `ExecuteBuyback` calculates elapsed intervals since sale end and releases only newly scheduled TON.
-- Double execution of the same interval is rejected.
+There is no post-sale automation in this architecture. Creator liquidity is handled manually outside the presale pool.
 
 ## Development
 
 ```bash
-npm install
 npm run build
-npm test
 npm run lint
+npm test
 ```
 
-## Files
+## Testnet Deployment
 
-- `contracts/Launchpad.tact` - factory, Jetton master/wallet, pool, DEX adapter
-- `tests/Launchpad.spec.ts` - full frontend launch-flow tests
-- `scripts/deployLaunchpad.ts` - deploys factory and adapter
-- `frontend-integration.md` - message/getter reference for the frontend/backend
+```bash
+npm install
+npm run contract:build
+npx blueprint run deployLaunchpad --testnet
+```
 
-## Testnet Notes
-
-Deploy `LaunchpadFactory` and `DexAdapter` first. The frontend/backend should call `LaunchToken` on the factory for each launch. Each launch deploys its own Jetton master and deterministic Jetton wallets are deployed/used as allocations move.
+Deploy `LaunchpadFactory`, then set the factory address in frontend and backend env.

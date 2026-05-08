@@ -1,18 +1,18 @@
-import { Repeat2, Shield, Lock, Sparkles, Wallet, BarChart3 } from "lucide-react";
+import { CircleDollarSign, Shield, HandCoins, Sparkles, Wallet, BarChart3 } from "lucide-react";
 
 const FEATURES = [
   {
-    icon: Repeat2,
-    title: "Programmatic Buybacks",
+    icon: CircleDollarSign,
+    title: "Clear Platform Fees",
     description:
-      "Allocate up to 40% of treasury to automated buybacks at the cadence you choose — drip, steady, balanced, or aggressive.",
+      "Successful sales pay 5% of raised TON and 1% of presale tokens to the platform. Failed sales remain refundable.",
     accent: true,
   },
   {
-    icon: Lock,
-    title: "Locked Liquidity",
+    icon: HandCoins,
+    title: "Manual Liquidity",
     description:
-      "Initial DEX liquidity is locked on deploy. No surprise rugs. Schedules and unlocks are visible on-chain.",
+      "Creators receive their treasury after success and manage liquidity externally with their own launch plan.",
   },
   {
     icon: Shield,
@@ -36,7 +36,7 @@ const FEATURES = [
     icon: Sparkles,
     title: "No-Code Wizard",
     description:
-      "Five clear steps. Visual preview as you type. Every parameter is enforced on the smart contract level.",
+      "Four clear steps. Visual preview as you type. Every parameter is enforced on the smart contract level.",
   },
 ];
 

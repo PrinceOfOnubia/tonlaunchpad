@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownLeft, ArrowUpRight, Loader2, Repeat2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Loader2, WalletCards } from "lucide-react";
 import { useTokenTransactions } from "@/lib/hooks";
 import { cn, formatTon, shortAddress, timeAgo } from "@/lib/utils";
 import type { Transaction, TxKind } from "@/lib/types";
@@ -77,8 +77,7 @@ const META: Record<TxKind, { icon: typeof ArrowDownLeft; label: string; bg: stri
   contribute: { icon: ArrowDownLeft, label: "Contribute", bg: "bg-ton-100", fg: "text-ton-700" },
   claim: { icon: ArrowUpRight, label: "Claim", bg: "bg-emerald-100", fg: "text-emerald-700" },
   refund: { icon: ArrowUpRight, label: "Refund", bg: "bg-amber-100", fg: "text-amber-700" },
-  migrate: { icon: Repeat2, label: "Migrate", bg: "bg-violet-100", fg: "text-violet-700" },
+  treasury: { icon: WalletCards, label: "Treasury", bg: "bg-violet-100", fg: "text-violet-700" },
   buy: { icon: ArrowDownLeft, label: "Buy", bg: "bg-emerald-100", fg: "text-emerald-700" },
   sell: { icon: ArrowUpRight, label: "Sell", bg: "bg-red-100", fg: "text-red-700" },
-  buyback: { icon: Repeat2, label: "Buyback", bg: "bg-violet-100", fg: "text-violet-700" },
 };

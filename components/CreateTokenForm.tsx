@@ -8,19 +8,11 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
-  ChevronDown,
   Image as ImageIcon,
   Loader2,
   Rocket,
   Wallet,
 } from "lucide-react";
-import {
-  BUYBACK_PRESETS,
-  DEFAULT_BUYBACK_PRESET_ID,
-  formatBuybackRate,
-  formatInterval,
-  findPresetByRate,
-} from "@/lib/buyback";
 import { api } from "@/lib/api";
 import {
   cn,
@@ -39,16 +31,13 @@ import {
 import { saveRecentLaunch, tokenFromLaunchInput } from "@/lib/recentLaunches";
 import { TokenPreview } from "./TokenPreview";
 
-type Step = 0 | 1 | 2 | 3 | 4;
+type Step = 0 | 1 | 2 | 3;
 const STEPS: { title: string; subtitle: string }[] = [
   { title: "Token", subtitle: "Identity & branding" },
   { title: "Allocation", subtitle: "Token distribution" },
   { title: "Presale", subtitle: "Cap, rate, schedule" },
-  { title: "Buybacks", subtitle: "Programmatic price support" },
   { title: "Review", subtitle: "Confirm & deploy" },
 ];
-
-const defaultPreset = BUYBACK_PRESETS.find((p) => p.id === DEFAULT_BUYBACK_PRESET_ID)!;
 
 const initialPayload = (): CreateTokenPayload => {
   const now = new Date();
@@ -70,11 +59,6 @@ const initialPayload = (): CreateTokenPayload => {
       endTime: end.toISOString(),
       minContribution: 0.5,
       maxContribution: 50,
-    },
-    buyback: {
-      enabled: true,
-      percent: 20,
-      rate: defaultPreset.rate,
     },
     liquidityPercent: 70,
     social: {},
@@ -237,7 +221,6 @@ export function CreateTokenForm() {
           ...payload,
           transactionBoc: result.boc,
           factoryAddress,
-          dexAdapterAddress: process.env.NEXT_PUBLIC_DEX_ADAPTER_ADDRESS,
           tokenMasterAddress: null,
           presalePoolAddress: null,
         });
@@ -283,18 +266,14 @@ export function CreateTokenForm() {
         </div>
         <h2 className="mt-5 font-display text-2xl font-bold text-ink-900">Launch submitted!</h2>
         <p className="mt-2 text-sm text-ink-500">
-          Your launch has been submitted successfully. Your token launch is now live on TON
-          testnet.
-        </p>
-        <p className="mt-2 text-xs text-emerald-600">
-          Your presale dashboard is now being prepared.
+          Launch submitted successfully. Your presale page is now available.
         </p>
         {data.name && (
           <div className="mt-4 rounded-lg bg-ink-50 p-3">
             <div className="text-sm font-semibold text-ink-900">
               {data.name} <span className="font-mono text-ink-500">{data.symbol}</span>
             </div>
-            <div className="mt-1 text-xs font-medium text-emerald-600">Preparing launch</div>
+            <div className="mt-1 text-xs font-medium text-emerald-600">Presale page ready</div>
           </div>
         )}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
@@ -326,7 +305,7 @@ export function CreateTokenForm() {
   // Wizard
   // ---------------------------------------------------------------------
   const stepValid = validation.bySteps[step];
-  const isLast = step === 4;
+  const isLast = step === 3;
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
@@ -345,8 +324,7 @@ export function CreateTokenForm() {
           )}
           {step === 1 && <StepAllocation data={data} patch={patch} sum={allocSum} />}
           {step === 2 && <StepPresale data={data} update={update} patch={patch} />}
-          {step === 3 && <StepBuyback data={data} update={update} patch={patch} />}
-          {step === 4 && <StepReview data={data} imagePreview={imagePreview} />}
+          {step === 3 && <StepReview data={data} imagePreview={imagePreview} />}
 
           {error && (
             <div className="mt-5 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-200">
@@ -686,7 +664,7 @@ function StepPresale(props: {
             className="input-base font-mono"
           />
         </Field>
-        <Field label="Liquidity %" required hint="% of raised TON locked into DEX">
+        <Field label="Manual liquidity %" required hint="Informational only for creator planning">
           <input
             type="number"
             min={0}
@@ -773,234 +751,7 @@ function StepPresale(props: {
 }
 
 // =============================================================================
-// Step 4 — BUYBACKS (the headline feature)
-// =============================================================================
-function StepBuyback(props: {
-  data: CreateTokenPayload;
-  update: <K extends keyof CreateTokenPayload>(k: K, v: CreateTokenPayload[K]) => void;
-  patch: <K extends keyof CreateTokenPayload>(k: K, p: Partial<CreateTokenPayload[K]>) => void;
-}) {
-  const { data, patch } = props;
-  const enabled = data.buyback.enabled;
-
-  return (
-    <Section
-      title="Programmatic Buybacks"
-      subtitle="Automatic token buybacks supporting the price after launch"
-    >
-      {/* Master toggle */}
-      <div className="flex items-start justify-between rounded-2xl border border-ink-100 bg-gradient-to-br from-white to-ton-50/50 p-5">
-        <div>
-          <div className="font-display text-base font-semibold text-ink-900">
-            Enable buybacks
-          </div>
-          <p className="mt-1 max-w-md text-xs text-ink-500">
-            A portion of post-launch trading fees and treasury TON is automatically used to buy
-            back your token at a fixed cadence.
-          </p>
-        </div>
-        <Toggle
-          checked={enabled}
-          onChange={(v) => patch("buyback", { enabled: v })}
-          label="Buybacks"
-        />
-      </div>
-
-      {/* Buyback budget % slider 0-40 */}
-      <div
-        className={cn(
-          "transition-opacity",
-          enabled ? "opacity-100" : "pointer-events-none opacity-40",
-        )}
-      >
-        <div className="rounded-2xl border border-ink-100 p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold text-ink-900">Buyback budget</div>
-              <div className="text-xs text-ink-500">
-                Share of treasury allocated to buybacks (0–40%)
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="font-display text-3xl font-bold text-ton-600">
-                {data.buyback.percent}%
-              </div>
-            </div>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={40}
-            step={1}
-            value={data.buyback.percent}
-            onChange={(e) => patch("buyback", { percent: Number(e.target.value) })}
-            className="range-input mt-4"
-          />
-          <div className="mt-1 flex justify-between text-[11px] text-ink-400">
-            <span>0%</span>
-            <span>10%</span>
-            <span>20%</span>
-            <span>30%</span>
-            <span>40%</span>
-          </div>
-        </div>
-
-        {/* Cadence presets */}
-        <div className="mt-4 rounded-2xl border border-ink-100 p-5">
-          <div className="mb-3">
-            <div className="text-sm font-semibold text-ink-900">Buyback cadence</div>
-            <div className="text-xs text-ink-500">
-              How quickly the budget is consumed. Smaller chunks = smoother price impact.
-            </div>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            {BUYBACK_PRESETS.map((p) => {
-              const active =
-                data.buyback.rate.percent === p.rate.percent &&
-                data.buyback.rate.intervalMinutes === p.rate.intervalMinutes;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => patch("buyback", { rate: p.rate })}
-                  className={cn(
-                    "rounded-xl border p-3 text-left transition-all",
-                    active
-                      ? "border-ton-500 bg-ton-50 ring-2 ring-ton-200"
-                      : "border-ink-200 bg-white hover:border-ton-300",
-                  )}
-                >
-                  <div className="flex items-baseline justify-between">
-                    <span
-                      className={cn(
-                        "font-display text-sm font-semibold",
-                        active ? "text-ton-700" : "text-ink-900",
-                      )}
-                    >
-                      {p.label}
-                    </span>
-                    <span className="font-mono text-xs font-semibold text-ink-700">
-                      {p.rate.percent}% / {formatInterval(p.rate.intervalMinutes)}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-[11px] text-ink-500">{p.description}</div>
-                </button>
-              );
-            })}
-          </div>
-
-          <CustomCadence
-            current={data.buyback.rate}
-            onChange={(rate) => patch("buyback", { rate })}
-          />
-        </div>
-
-        {/* Summary card */}
-        <div className="mt-4 rounded-2xl bg-ton-gradient p-5 text-white">
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-80">
-            Configuration summary
-          </div>
-          <div className="mt-2 font-display text-xl font-bold">
-            {data.buyback.percent}% of treasury · {formatBuybackRate(data.buyback.rate)}
-          </div>
-          <div className="mt-1 text-xs opacity-90">
-            Budget fully consumed in approx{" "}
-            {data.buyback.rate.percent > 0
-              ? formatInterval(
-                  Math.ceil((100 / data.buyback.rate.percent) * data.buyback.rate.intervalMinutes),
-                )
-              : "—"}
-          </div>
-        </div>
-      </div>
-    </Section>
-  );
-}
-
-function CustomCadence({
-  current,
-  onChange,
-}: {
-  current: { percent: number; intervalMinutes: number };
-  onChange: (r: { percent: number; intervalMinutes: number }) => void;
-}) {
-  const isPreset = !!findPresetByRate(current);
-  const [open, setOpen] = useState(!isPreset);
-  return (
-    <div className="mt-3">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold text-ink-600 hover:bg-ink-50"
-      >
-        <span>Or set custom cadence</span>
-        <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} />
-      </button>
-      {open && (
-        <div className="mt-2 grid gap-3 rounded-xl border border-ink-100 bg-ink-50/40 p-3 sm:grid-cols-2">
-          <Field label="% per interval" hint="1-100">
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={current.percent}
-              onChange={(e) =>
-                onChange({ ...current, percent: clamp(Number(e.target.value), 1, 100) })
-              }
-              className="input-base font-mono"
-            />
-          </Field>
-          <Field label="Interval (minutes)" hint="≥ 1">
-            <input
-              type="number"
-              min={1}
-              value={current.intervalMinutes}
-              onChange={(e) =>
-                onChange({ ...current, intervalMinutes: Math.max(1, Number(e.target.value)) })
-              }
-              className="input-base font-mono"
-            />
-          </Field>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative h-7 w-12 shrink-0 rounded-full transition-colors",
-        checked ? "bg-ton-500" : "bg-ink-200",
-      )}
-    >
-      <span
-        className={cn(
-          "absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-transform",
-          checked ? "translate-x-5" : "translate-x-0.5",
-        )}
-      />
-    </button>
-  );
-}
-
-// =============================================================================
-// Step 5 — Review
+// Step 4 — Review
 // =============================================================================
 function StepReview({
   data,
@@ -1036,23 +787,22 @@ function StepReview({
           <ReviewRow label="Rate" value={`${data.presale.rate.toLocaleString()} per TON`} />
           <ReviewRow label="Soft cap" value={formatTon(data.presale.softCap)} />
           <ReviewRow label="Hard cap" value={formatTon(data.presale.hardCap)} />
-          <ReviewRow label="Liquidity locked" value={`${data.liquidityPercent}% of raise`} />
+          <ReviewRow label="Manual liquidity plan" value={`${data.liquidityPercent}% of raise`} />
           <ReviewRow
             label="Schedule"
             value={`${new Date(data.presale.startTime).toLocaleString()} → ${new Date(data.presale.endTime).toLocaleString()}`}
           />
         </ReviewSection>
 
-        <ReviewSection title="Buybacks">
-          {data.buyback.enabled ? (
-            <>
-              <ReviewRow label="Budget" value={`${data.buyback.percent}% of treasury`} />
-              <ReviewRow label="Cadence" value={formatBuybackRate(data.buyback.rate)} />
-            </>
-          ) : (
-            <ReviewRow label="Status" value="Disabled" />
-          )}
+        <ReviewSection title="Platform fees">
+          <ReviewRow label="TON fee" value="5% of raised TON" />
+          <ReviewRow label="Token fee" value="1% of presale tokens" />
+          <ReviewRow label="Creator treasury" value="95% of successful raise" />
         </ReviewSection>
+
+        <div className="rounded-xl bg-ton-50 p-4 text-sm font-semibold text-ton-700 ring-1 ring-ton-200">
+          Platform fee: 5% of raised TON + 1% of presale tokens.
+        </div>
       </div>
     </Section>
   );
@@ -1138,7 +888,7 @@ interface StepCheck {
 }
 
 function validate(d: CreateTokenPayload) {
-  const bySteps: Record<Step, StepCheck> = { 0: { ok: true }, 1: { ok: true }, 2: { ok: true }, 3: { ok: true }, 4: { ok: true } };
+  const bySteps: Record<Step, StepCheck> = { 0: { ok: true }, 1: { ok: true }, 2: { ok: true }, 3: { ok: true } };
 
   // Step 0
   if (!d.name.trim()) bySteps[0] = { ok: false, reason: "Name is required" };
@@ -1159,16 +909,6 @@ function validate(d: CreateTokenPayload) {
     bySteps[2] = { ok: false, reason: "End time must be after start time" };
   else if (d.liquidityPercent < 0 || d.liquidityPercent > 100)
     bySteps[2] = { ok: false, reason: "Liquidity % must be 0-100" };
-
-  // Step 3 — buyback
-  if (d.buyback.enabled) {
-    if (d.buyback.percent < 0 || d.buyback.percent > 40)
-      bySteps[3] = { ok: false, reason: "Buyback % must be 0-40" };
-    else if (d.buyback.rate.percent < 1 || d.buyback.rate.percent > 100)
-      bySteps[3] = { ok: false, reason: "Cadence % must be 1-100" };
-    else if (d.buyback.rate.intervalMinutes < 1)
-      bySteps[3] = { ok: false, reason: "Interval must be ≥ 1 minute" };
-  }
 
   const allValid = Object.values(bySteps).every((c) => c.ok);
   return { bySteps, allValid };

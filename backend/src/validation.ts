@@ -34,7 +34,6 @@ export const createLaunchSchema = z.object({
   creator: tonAddressSchema.optional(),
   creatorWallet: tonAddressSchema.optional(),
   factoryAddress: tonAddressSchema.optional(),
-  dexAdapterAddress: tonAddressSchema.optional(),
   tokenMasterAddress: tonAddressSchema.optional().nullable(),
   presalePoolAddress: tonAddressSchema.optional().nullable(),
   txHash: z.string().min(1).optional(),
@@ -60,24 +59,14 @@ export const createLaunchSchema = z.object({
     maxContribution: z.coerce.number().nonnegative().optional(),
   }),
   liquidityPercent: z.coerce.number().min(0).max(100),
-  buyback: z
-    .object({
-      enabled: z.boolean().default(false),
-      percent: z.coerce.number().min(0).max(40).default(0),
-      rate: z.object({
-        percent: z.coerce.number().min(0).max(100).default(0),
-        intervalMinutes: z.coerce.number().min(0).default(0),
-      }),
-    })
-    .default({ enabled: false, percent: 0, rate: { percent: 0, intervalMinutes: 0 } }),
   social: socialSchema,
 });
 
 export const listQuerySchema = z.object({
   status: z.enum(["all", "live", "upcoming", "trending", "succeeded", "concluded"]).optional().default("all"),
   search: z.string().optional().default(""),
-  sort: z.enum(["newest", "oldest", "liquidity", "volume"]).optional(),
-  sortBy: z.enum(["newest", "oldest", "liquidity", "volume", "marketCap", "volume24h", "raised"]).optional(),
+  sort: z.enum(["newest", "oldest", "volume"]).optional(),
+  sortBy: z.enum(["newest", "oldest", "volume", "marketCap", "volume24h", "raised"]).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(24),
 });

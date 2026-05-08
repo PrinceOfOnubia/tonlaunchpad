@@ -2,7 +2,6 @@
 
 import { AtSign, Globe, Send } from "lucide-react";
 import type { CreateTokenPayload } from "@/lib/types";
-import { formatBuybackRate } from "@/lib/buyback";
 import { cn, formatTon } from "@/lib/utils";
 
 interface Props {
@@ -48,15 +47,9 @@ export function TokenPreview({ data, imagePreview }: Props) {
         )}
 
         <div className="mt-4 flex flex-wrap gap-1.5">
-          {data.buyback.enabled && data.buyback.percent > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-ton-50 px-2 py-0.5 text-[11px] font-medium text-ton-700 ring-1 ring-inset ring-ton-200">
-              {data.buyback.percent}% buybacks · {formatBuybackRate(data.buyback.rate)}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-ink-100 px-2 py-0.5 text-[11px] font-medium text-ink-500">
-              No buybacks
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1 rounded-full bg-ton-50 px-2 py-0.5 text-[11px] font-medium text-ton-700 ring-1 ring-inset ring-ton-200">
+            Manual liquidity after presale
+          </span>
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-ink-100 pt-3 text-xs">

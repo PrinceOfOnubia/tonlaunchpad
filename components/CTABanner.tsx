@@ -19,8 +19,7 @@ export function CTABanner() {
         <div className="relative">
           <h2 className="font-display text-3xl font-bold sm:text-4xl">Ready to launch?</h2>
           <p className="mx-auto mt-3 max-w-xl text-sm text-white/85 sm:text-base">
-            Configure your tokenomics, presale, and buyback cadence in five guided steps. No code,
-            no waiting.
+            Configure your tokenomics and presale in four guided steps. No code, no waiting.
           </p>
           <div className="mt-7 flex justify-center">
             <Link

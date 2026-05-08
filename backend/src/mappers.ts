@@ -1,12 +1,10 @@
 import type { Launch, Transaction } from "@prisma/client";
 
 export function launchStatus(launch: Launch): "upcoming" | "live" | "succeeded" | "failed" | "finalized" {
-  if (launch.status === "migrated") return "finalized";
   return launch.status;
 }
 
 export function computeStatus(launch: Pick<Launch, "startTime" | "endTime" | "raisedTon" | "softCap" | "status">) {
-  if (launch.status === "migrated") return "migrated";
   const now = Date.now();
   const start = launch.startTime.getTime();
   const end = launch.endTime.getTime();
@@ -43,14 +41,6 @@ export function launchToToken(launch: Launch) {
       status: launchStatus(launch),
       minContribution: launch.minContribution ?? undefined,
       maxContribution: launch.maxContribution ?? undefined,
-    },
-    buyback: {
-      enabled: launch.buybackPercent > 0,
-      percent: launch.buybackPercent,
-      rate: {
-        percent: launch.buybackChunkPercent,
-        intervalMinutes: Math.round(launch.buybackIntervalSeconds / 60),
-      },
     },
     liquidityPercent: launch.liquidityPercent,
     social: asSocial(launch.social),

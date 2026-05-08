@@ -115,7 +115,6 @@ export function tokenFromLaunchInput(args: {
     decimals: number;
     allocations: Token["allocations"];
     presale: Omit<Token["presale"], "raised" | "contributors" | "status">;
-    buyback: Token["buyback"];
     liquidityPercent: number;
     social: Token["social"];
     creator: string;
@@ -141,7 +140,6 @@ export function tokenFromLaunchInput(args: {
       contributors: 0,
       status: "upcoming",
     },
-    buyback: args.form.buyback,
     liquidityPercent: args.form.liquidityPercent,
     social: args.form.social,
     creator: args.form.creator,
@@ -158,8 +156,6 @@ export function normalizeToken(input: unknown): Token {
   const source = isRecord(input) ? input : {};
   const presale = isRecord(source.presale) ? source.presale : {};
   const allocations = isRecord(source.allocations) ? source.allocations : {};
-  const buyback = isRecord(source.buyback) ? source.buyback : {};
-  const rate = isRecord(buyback.rate) ? buyback.rate : {};
   const social = isRecord(source.social) ? source.social : {};
   const now = new Date().toISOString();
 
@@ -190,14 +186,6 @@ export function normalizeToken(input: unknown): Token {
       status: tokenStatus(presale.status),
       minContribution: optionalNumber(presale.minContribution),
       maxContribution: optionalNumber(presale.maxContribution),
-    },
-    buyback: {
-      enabled: booleanValue(buyback.enabled, false),
-      percent: numberValue(buyback.percent, 0),
-      rate: {
-        percent: numberValue(rate.percent, 0),
-        intervalMinutes: numberValue(rate.intervalMinutes, 1),
-      },
     },
     liquidityPercent: numberValue(source.liquidityPercent, 0),
     social: {
@@ -255,10 +243,6 @@ function numberValue(value: unknown, fallback: number): number {
 
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function booleanValue(value: unknown, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback;
 }
 
 function tokenStatus(value: unknown): Token["presale"]["status"] {

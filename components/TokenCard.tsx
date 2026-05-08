@@ -6,7 +6,6 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 import type { Token } from "@/lib/types";
 import { cn, formatCompact, formatPercent, formatPrice, formatTon } from "@/lib/utils";
 import { PresaleProgress } from "./PresaleProgress";
-import { BuybackBadge } from "./BuybackBadge";
 import { useEffectivePresale } from "@/lib/presaleStatus";
 
 interface Props {
@@ -64,7 +63,6 @@ export function TokenCard({ token, className }: Props) {
             >
               {status}
             </span>
-            <BuybackBadge buyback={token.buyback} />
           </div>
         </div>
       </div>

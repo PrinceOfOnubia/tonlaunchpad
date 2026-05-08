@@ -106,7 +106,6 @@ export interface CreateLaunchRequest extends CreateTokenPayload {
   txHash?: string;
   transactionBoc?: string;
   factoryAddress?: string;
-  dexAdapterAddress?: string;
   tokenMasterAddress?: string | null;
   presalePoolAddress?: string | null;
 }

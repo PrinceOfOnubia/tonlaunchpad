@@ -12,7 +12,6 @@ enum LaunchStatus {
   live
   succeeded
   failed
-  migrated
 }
 
 enum TransactionType {
@@ -20,8 +19,7 @@ enum TransactionType {
   contribute
   claim
   refund
-  migrate
-  buyback
+  treasury
 }
 
 model Launch {
@@ -35,15 +33,11 @@ model Launch {
   factoryAddress          String
   tokenMasterAddress      String?       @unique
   presalePoolAddress      String?       @unique
-  dexAdapterAddress       String
   txHash                  String?       @unique
   softCap                 Float
   hardCap                 Float
   raisedTon               Float         @default(0)
   liquidityPercent        Float
-  buybackPercent          Float         @default(0)
-  buybackChunkPercent     Float         @default(0)
-  buybackIntervalSeconds  Int           @default(0)
   status                  LaunchStatus  @default(upcoming)
   startTime               DateTime
   endTime                 DateTime
@@ -104,7 +98,7 @@ model Holder {
 model StatsCache {
   id                String   @id @default("global")
   tokensLaunched    Int      @default(0)
-  totalLiquidityTon Float    @default(0)
+  totalRaisedTon    Float    @default(0)
   activeHolders     Int      @default(0)
   volume24hTon      Float    @default(0)
   updatedAt         DateTime @updatedAt

@@ -13,12 +13,6 @@ const ERR_SOFT_CAP_NOT_MET: Int = 109;
 const ERR_SOFT_CAP_MET: Int = 110;
 const ERR_NO_CONTRIBUTION: Int = 111;
 const ERR_ALREADY_DONE: Int = 112;
-const ERR_NOT_MIGRATED: Int = 113;
-const ERR_BUYBACK_DISABLED: Int = 114;
-const ERR_BUYBACK_NOT_STARTED: Int = 115;
-const ERR_NO_BUYBACK_AVAILABLE: Int = 116;
-const ERR_BAD_BUYBACK_PERCENT: Int = 117;
-const ERR_BAD_BUYBACK_CHUNK: Int = 118;
 const ERR_BAD_TIME: Int = 119;
 const ERR_BAD_CAPS: Int = 120;
 const ERR_BAD_ALLOCATION: Int = 121;
@@ -27,7 +21,8 @@ const ERR_INSUFFICIENT_BALANCE: Int = 123;
 
 const BPS_DENOMINATOR: Int = 10000;
 const PERCENT_DENOMINATOR: Int = 100;
-const MAX_BUYBACK_BPS: Int = 4000;
+const PLATFORM_TON_FEE_BPS: Int = 500;
+const PLATFORM_TOKEN_FEE_BPS: Int = 100;
 const TOKEN_TRANSFER_GAS: Int = 100000000;
 const DEPLOY_VALUE: Int = 50000000;
 const TOKEN_DEPLOY_VALUE: Int = 250000000;
@@ -44,8 +39,6 @@ message LaunchToken {
     liquidityPercentTokens: Int;
     creatorPercent: Int;
     treasuryAddress: Address;
-    dexAdapter: Address;
-    buybackWallet: Address;
     presaleRate: Int;
     softCap: Int;
     hardCap: Int;
@@ -54,10 +47,6 @@ message LaunchToken {
     startTime: Int;
     endTime: Int;
     liquidityPercentOfRaised: Int;
-    buybackEnabled: Bool;
-    buybackPercentBps: Int;
-    buybackChunkBps: Int;
-    buybackIntervalSeconds: Int;
 }
 
 message MintToken {
@@ -85,26 +74,14 @@ message(0x178d4519) JettonInternalTransfer {
 }
 
 message Contribute {}
-message MigrateLiquidity {}
 message ClaimTokens {}
 message Refund {}
+message CreatorClaimTreasury {}
 message WithdrawTreasury {}
 message RecoverFailedTokens {}
-message ExecuteBuyback {}
 message Pause {}
 message Unpause {}
 message CancelSale {}
-
-message AddLiquidity {
-    token: Address;
-    tokenAmount: Int;
-    requester: Address;
-}
-
-message ExecuteDexBuyback {
-    token: Address;
-    requester: Address;
-}
 
 struct LaunchRecord {
     token: Address;
@@ -144,11 +121,10 @@ struct PresaleState {
     failed: Bool;
     cancelled: Bool;
     paused: Bool;
-    migrationDone: Bool;
-    liquidityTON: Int;
-    buybackReserve: Int;
-    buybackReleased: Int;
-    treasuryWithdrawn: Int;
+    treasuryClaimed: Bool;
+    platformTonFeePaid: Bool;
+    platformTonFee: Int;
+    creatorClaimable: Int;
 }
 
 struct PresaleConfig {
@@ -156,8 +132,7 @@ struct PresaleConfig {
     creator: Address;
     token: Address;
     treasuryAddress: Address;
-    dexAdapter: Address;
-    buybackWallet: Address;
+    platformTreasury: Address;
     presaleRate: Int;
     softCap: Int;
     hardCap: Int;
@@ -166,20 +141,10 @@ struct PresaleConfig {
     startTime: Int;
     endTime: Int;
     liquidityPercentOfRaised: Int;
-    buybackEnabled: Bool;
-    buybackPercentBps: Int;
-    buybackChunkBps: Int;
-    buybackIntervalSeconds: Int;
     presaleTokenAllocation: Int;
+    buyerTokenAllocation: Int;
+    platformTokenFee: Int;
     liquidityTokenAllocation: Int;
-}
-
-struct DexState {
-    totalLiquidityTON: Int;
-    totalLiquidityTokens: Int;
-    totalBuybackTON: Int;
-    migrations: Int;
-    buybacks: Int;
 }
 
 contract LaunchpadJettonMaster with Deployable {
@@ -243,13 +208,7 @@ contract LaunchpadJettonMaster with Deployable {
     }
 
     get fun get_jetton_data(): JettonData {
-        return JettonData{
-            totalSupply: self.mintedSupply,
-            mintable: self.mintedSupply < self.totalSupply,
-            admin: self.factory,
-            content: self.metadata,
-            walletCode: codeOf JettonWallet
-        };
+        return self.getJettonData();
     }
 
     get fun getTokenMetadata(): TokenMetadata {
@@ -315,51 +274,7 @@ contract JettonWallet with Deployable {
     }
 
     get fun get_wallet_data(): JettonWalletData {
-        return JettonWalletData{
-            balance: self.balance,
-            owner: self.owner,
-            master: self.master,
-            walletCode: codeOf JettonWallet
-        };
-    }
-}
-
-contract DexAdapter with Deployable {
-    owner: Address;
-    totalLiquidityTON: Int;
-    totalLiquidityTokens: Int;
-    totalBuybackTON: Int;
-    migrations: Int;
-    buybacks: Int;
-
-    init(owner: Address) {
-        self.owner = owner;
-        self.totalLiquidityTON = 0;
-        self.totalLiquidityTokens = 0;
-        self.totalBuybackTON = 0;
-        self.migrations = 0;
-        self.buybacks = 0;
-    }
-
-    receive(msg: AddLiquidity) {
-        self.totalLiquidityTON += context().value;
-        self.totalLiquidityTokens += msg.tokenAmount;
-        self.migrations += 1;
-    }
-
-    receive(_: ExecuteDexBuyback) {
-        self.totalBuybackTON += context().value;
-        self.buybacks += 1;
-    }
-
-    get fun getDexState(): DexState {
-        return DexState{
-            totalLiquidityTON: self.totalLiquidityTON,
-            totalLiquidityTokens: self.totalLiquidityTokens,
-            totalBuybackTON: self.totalBuybackTON,
-            migrations: self.migrations,
-            buybacks: self.buybacks
-        };
+        return self.getWalletData();
     }
 }
 
@@ -368,8 +283,7 @@ contract PresalePool with Deployable {
     creator: Address;
     token: Address;
     treasuryAddress: Address;
-    dexAdapter: Address;
-    buybackWallet: Address;
+    platformTreasury: Address;
     presaleRate: Int;
     softCap: Int;
     hardCap: Int;
@@ -378,11 +292,9 @@ contract PresalePool with Deployable {
     startTime: Int;
     endTime: Int;
     liquidityPercentOfRaised: Int;
-    buybackEnabled: Bool;
-    buybackPercentBps: Int;
-    buybackChunkBps: Int;
-    buybackIntervalSeconds: Int;
     presaleTokenAllocation: Int;
+    buyerTokenAllocation: Int;
+    platformTokenFee: Int;
     liquidityTokenAllocation: Int;
 
     totalRaised: Int;
@@ -391,11 +303,8 @@ contract PresalePool with Deployable {
     failed: Bool;
     cancelled: Bool;
     paused: Bool;
-    migrationDone: Bool;
-    liquidityTON: Int;
-    buybackReserve: Int;
-    buybackReleased: Int;
-    treasuryWithdrawn: Int;
+    treasuryClaimed: Bool;
+    platformTonFeePaid: Bool;
     failedTokensRecovered: Bool;
     userContribution: map<Address, Int>;
     userClaimed: map<Address, Bool>;
@@ -406,8 +315,7 @@ contract PresalePool with Deployable {
         creator: Address,
         token: Address,
         treasuryAddress: Address,
-        dexAdapter: Address,
-        buybackWallet: Address,
+        platformTreasury: Address,
         presaleRate: Int,
         softCap: Int,
         hardCap: Int,
@@ -416,11 +324,9 @@ contract PresalePool with Deployable {
         startTime: Int,
         endTime: Int,
         liquidityPercentOfRaised: Int,
-        buybackEnabled: Bool,
-        buybackPercentBps: Int,
-        buybackChunkBps: Int,
-        buybackIntervalSeconds: Int,
         presaleTokenAllocation: Int,
+        buyerTokenAllocation: Int,
+        platformTokenFee: Int,
         liquidityTokenAllocation: Int
     ) {
         throwUnless(ERR_BAD_CAPS, presaleRate > 0);
@@ -428,20 +334,13 @@ contract PresalePool with Deployable {
         throwUnless(ERR_BAD_CAPS, minContribution <= maxContribution);
         throwUnless(ERR_BAD_TIME, startTime < endTime);
         throwUnless(ERR_BAD_ALLOCATION, liquidityPercentOfRaised <= 100);
-        throwUnless(ERR_BAD_BUYBACK_PERCENT, buybackPercentBps <= MAX_BUYBACK_BPS);
-        throwUnless(ERR_BAD_BUYBACK_CHUNK, buybackChunkBps <= buybackPercentBps);
-        if (buybackEnabled) {
-            throwUnless(ERR_BAD_BUYBACK_PERCENT, buybackPercentBps > 0);
-            throwUnless(ERR_BAD_BUYBACK_CHUNK, buybackChunkBps > 0);
-            throwUnless(ERR_BAD_TIME, buybackIntervalSeconds > 0);
-        }
+        throwUnless(ERR_BAD_ALLOCATION, buyerTokenAllocation + platformTokenFee == presaleTokenAllocation);
 
         self.factory = factory;
         self.creator = creator;
         self.token = token;
         self.treasuryAddress = treasuryAddress;
-        self.dexAdapter = dexAdapter;
-        self.buybackWallet = buybackWallet;
+        self.platformTreasury = platformTreasury;
         self.presaleRate = presaleRate;
         self.softCap = softCap;
         self.hardCap = hardCap;
@@ -450,11 +349,9 @@ contract PresalePool with Deployable {
         self.startTime = startTime;
         self.endTime = endTime;
         self.liquidityPercentOfRaised = liquidityPercentOfRaised;
-        self.buybackEnabled = buybackEnabled;
-        self.buybackPercentBps = buybackPercentBps;
-        self.buybackChunkBps = buybackChunkBps;
-        self.buybackIntervalSeconds = buybackIntervalSeconds;
         self.presaleTokenAllocation = presaleTokenAllocation;
+        self.buyerTokenAllocation = buyerTokenAllocation;
+        self.platformTokenFee = platformTokenFee;
         self.liquidityTokenAllocation = liquidityTokenAllocation;
 
         self.totalRaised = 0;
@@ -463,11 +360,8 @@ contract PresalePool with Deployable {
         self.failed = false;
         self.cancelled = false;
         self.paused = false;
-        self.migrationDone = false;
-        self.liquidityTON = 0;
-        self.buybackReserve = 0;
-        self.buybackReleased = 0;
-        self.treasuryWithdrawn = 0;
+        self.treasuryClaimed = false;
+        self.platformTonFeePaid = false;
         self.failedTokensRecovered = false;
     }
 
@@ -487,7 +381,7 @@ contract PresalePool with Deployable {
         throwUnless(ERR_MAX_CONTRIBUTION, nextContribution <= self.maxContribution);
 
         let tokenAmount: Int = self.tokensForTon(accepted);
-        throwUnless(ERR_BAD_ALLOCATION, self.totalSold + tokenAmount <= self.presaleTokenAllocation);
+        throwUnless(ERR_BAD_ALLOCATION, self.totalSold + tokenAmount <= self.buyerTokenAllocation);
 
         self.userContribution.set(ctx.sender, nextContribution);
         self.totalRaised += accepted;
@@ -504,52 +398,14 @@ contract PresalePool with Deployable {
         }
     }
 
-    receive(_: MigrateLiquidity) {
-        throwUnless(ERR_ALREADY_DONE, !self.migrationDone);
-        throwUnless(ERR_NOT_ENDED, now() > self.endTime || self.totalRaised >= self.hardCap);
-        throwUnless(ERR_SOFT_CAP_NOT_MET, self.totalRaised >= self.softCap);
-        throwUnless(ERR_ALREADY_DONE, !self.cancelled);
-
-        self.finalized = true;
-        self.liquidityTON = (self.totalRaised * self.liquidityPercentOfRaised) / PERCENT_DENOMINATOR;
-        let treasuryTON: Int = self.totalRaised - self.liquidityTON;
-        if (self.buybackEnabled) {
-            self.buybackReserve = (treasuryTON * self.buybackPercentBps) / BPS_DENOMINATOR;
-        }
-        self.migrationDone = true;
-
-        send(SendParameters{
-            to: self.poolWallet(),
-            value: TOKEN_TRANSFER_GAS,
-            mode: SendPayGasSeparately + SendIgnoreErrors,
-            bounce: true,
-            body: JettonTransfer{
-                queryId: 0,
-                amount: self.liquidityTokenAllocation,
-                destination: self.dexAdapter,
-                responseDestination: null,
-                customPayload: null,
-                forwardTonAmount: JETTON_FORWARD_TON,
-                forwardPayload: emptyCell()
-            }.toCell()
-        });
-
-        send(SendParameters{
-            to: self.dexAdapter,
-            value: self.liquidityTON,
-            mode: SendPayGasSeparately + SendIgnoreErrors,
-            bounce: false,
-            body: AddLiquidity{token: self.token, tokenAmount: self.liquidityTokenAllocation, requester: myAddress()}.toCell()
-        });
-    }
-
     receive(_: ClaimTokens) {
         let ctx: Context = context();
-        throwUnless(ERR_NOT_MIGRATED, self.migrationDone);
+        throwUnless(ERR_SOFT_CAP_NOT_MET, self.isSuccessful());
         let contribution: Int = self.storedContribution(ctx.sender);
         throwUnless(ERR_NO_CONTRIBUTION, contribution > 0);
         throwUnless(ERR_ALREADY_DONE, !self.storedClaimed(ctx.sender));
 
+        self.finalized = true;
         self.userClaimed.set(ctx.sender, true);
         send(SendParameters{
             to: self.poolWallet(),
@@ -599,7 +455,7 @@ contract PresalePool with Deployable {
             bounce: true,
             body: JettonTransfer{
                 queryId: 0,
-                amount: self.presaleTokenAllocation + self.liquidityTokenAllocation - self.totalSold,
+                amount: self.buyerTokenAllocation - self.totalSold,
                 destination: self.creator,
                 responseDestination: null,
                 customPayload: null,
@@ -609,41 +465,36 @@ contract PresalePool with Deployable {
         });
     }
 
+    receive(_: CreatorClaimTreasury) {
+        self.claimTreasury();
+    }
+
     receive(_: WithdrawTreasury) {
-        throwUnless(ERR_NOT_TREASURY, context().sender == self.treasuryAddress);
-        throwUnless(ERR_NOT_MIGRATED, self.migrationDone);
-        let withdrawable: Int = self.totalRaised - self.liquidityTON - self.buybackReserve - self.treasuryWithdrawn;
-        throwUnless(ERR_NO_CONTRIBUTION, withdrawable > 0);
-        self.treasuryWithdrawn += withdrawable;
+        self.claimTreasury();
+    }
+
+    fun claimTreasury() {
+        throwUnless(ERR_NOT_TREASURY, context().sender == self.treasuryAddress || context().sender == self.creator);
+        throwUnless(ERR_SOFT_CAP_NOT_MET, self.isSuccessful());
+        throwUnless(ERR_ALREADY_DONE, !self.treasuryClaimed);
+
+        self.finalized = true;
+        self.treasuryClaimed = true;
+        let platformFee: Int = self.platformTonFee();
+        let creatorAmount: Int = self.totalRaised - platformFee;
+        self.platformTonFeePaid = true;
+
         send(SendParameters{
-            to: self.treasuryAddress,
-            value: withdrawable,
+            to: self.platformTreasury,
+            value: platformFee,
             mode: SendPayGasSeparately + SendIgnoreErrors,
             bounce: false
         });
-    }
-
-    receive(_: ExecuteBuyback) {
-        throwUnless(ERR_BUYBACK_DISABLED, self.buybackEnabled);
-        throwUnless(ERR_NOT_MIGRATED, self.migrationDone);
-        throwUnless(ERR_BUYBACK_NOT_STARTED, now() > self.endTime);
-
-        let elapsed: Int = now() - self.endTime;
-        let intervals: Int = (elapsed / self.buybackIntervalSeconds) + 1;
-        let scheduledBps: Int = min(self.buybackPercentBps, intervals * self.buybackChunkBps);
-        let treasuryTON: Int = self.totalRaised - self.liquidityTON;
-        let scheduledAmount: Int = (treasuryTON * scheduledBps) / BPS_DENOMINATOR;
-        let releasable: Int = scheduledAmount - self.buybackReleased;
-        throwUnless(ERR_NO_BUYBACK_AVAILABLE, releasable > 0);
-        throwUnless(ERR_NO_BUYBACK_AVAILABLE, self.buybackReleased + releasable <= self.buybackReserve);
-
-        self.buybackReleased += releasable;
         send(SendParameters{
-            to: self.dexAdapter,
-            value: releasable,
+            to: self.treasuryAddress,
+            value: creatorAmount,
             mode: SendPayGasSeparately + SendIgnoreErrors,
-            bounce: false,
-            body: ExecuteDexBuyback{token: self.token, requester: myAddress()}.toCell()
+            bounce: false
         });
     }
 
@@ -659,8 +510,16 @@ contract PresalePool with Deployable {
 
     receive(_: CancelSale) {
         throwUnless(ERR_NOT_OWNER, context().sender == self.creator);
-        throwUnless(ERR_ALREADY_DONE, !self.migrationDone);
+        throwUnless(ERR_ALREADY_DONE, !self.finalized);
         self.cancelled = true;
+    }
+
+    fun isSuccessful(): Bool {
+        return !self.cancelled && (now() > self.endTime || self.totalRaised >= self.hardCap) && self.totalRaised >= self.softCap;
+    }
+
+    fun platformTonFee(): Int {
+        return (self.totalRaised * PLATFORM_TON_FEE_BPS) / BPS_DENOMINATOR;
     }
 
     fun tokensForTon(amount: Int): Int {
@@ -696,6 +555,7 @@ contract PresalePool with Deployable {
     }
 
     get fun getState(): PresaleState {
+        let fee: Int = self.platformTonFee();
         return PresaleState{
             totalRaised: self.totalRaised,
             totalSold: self.totalSold,
@@ -703,11 +563,10 @@ contract PresalePool with Deployable {
             failed: self.failed,
             cancelled: self.cancelled,
             paused: self.paused,
-            migrationDone: self.migrationDone,
-            liquidityTON: self.liquidityTON,
-            buybackReserve: self.buybackReserve,
-            buybackReleased: self.buybackReleased,
-            treasuryWithdrawn: self.treasuryWithdrawn
+            treasuryClaimed: self.treasuryClaimed,
+            platformTonFeePaid: self.platformTonFeePaid,
+            platformTonFee: fee,
+            creatorClaimable: self.totalRaised - fee
         };
     }
 
@@ -717,8 +576,7 @@ contract PresalePool with Deployable {
             creator: self.creator,
             token: self.token,
             treasuryAddress: self.treasuryAddress,
-            dexAdapter: self.dexAdapter,
-            buybackWallet: self.buybackWallet,
+            platformTreasury: self.platformTreasury,
             presaleRate: self.presaleRate,
             softCap: self.softCap,
             hardCap: self.hardCap,
@@ -727,11 +585,9 @@ contract PresalePool with Deployable {
             startTime: self.startTime,
             endTime: self.endTime,
             liquidityPercentOfRaised: self.liquidityPercentOfRaised,
-            buybackEnabled: self.buybackEnabled,
-            buybackPercentBps: self.buybackPercentBps,
-            buybackChunkBps: self.buybackChunkBps,
-            buybackIntervalSeconds: self.buybackIntervalSeconds,
             presaleTokenAllocation: self.presaleTokenAllocation,
+            buyerTokenAllocation: self.buyerTokenAllocation,
+            platformTokenFee: self.platformTokenFee,
             liquidityTokenAllocation: self.liquidityTokenAllocation
         };
     }
@@ -759,8 +615,6 @@ contract LaunchpadFactory with Deployable {
         let creator: Address = context().sender;
         throwUnless(ERR_BAD_ALLOCATION, msg.presalePercent + msg.liquidityPercentTokens + msg.creatorPercent == 100);
         throwUnless(ERR_BAD_ALLOCATION, msg.liquidityPercentOfRaised <= 100);
-        throwUnless(ERR_BAD_BUYBACK_PERCENT, msg.buybackPercentBps <= MAX_BUYBACK_BPS);
-        throwUnless(ERR_BAD_BUYBACK_CHUNK, msg.buybackChunkBps <= msg.buybackPercentBps);
         throwUnless(ERR_BAD_CAPS, msg.softCap <= msg.hardCap);
         throwUnless(ERR_BAD_CAPS, msg.minContribution <= msg.maxContribution);
         throwUnless(ERR_BAD_TIME, msg.startTime < msg.endTime);
@@ -769,16 +623,18 @@ contract LaunchpadFactory with Deployable {
         let tokenInit: StateInit = initOf LaunchpadJettonMaster(myAddress(), msg.name, msg.symbol, msg.description, msg.metadata, msg.totalSupply, msg.decimals);
         let tokenAddress: Address = contractAddress(tokenInit);
         let presaleAllocation: Int = (msg.totalSupply * msg.presalePercent) / PERCENT_DENOMINATOR;
+        let platformTokenFee: Int = (presaleAllocation * PLATFORM_TOKEN_FEE_BPS) / BPS_DENOMINATOR;
+        let buyerTokenAllocation: Int = presaleAllocation - platformTokenFee;
         let liquidityAllocation: Int = (msg.totalSupply * msg.liquidityPercentTokens) / PERCENT_DENOMINATOR;
         let creatorAllocation: Int = msg.totalSupply - presaleAllocation - liquidityAllocation;
+        let creatorManagedAllocation: Int = creatorAllocation + liquidityAllocation;
 
         let poolInit: StateInit = initOf PresalePool(
             myAddress(),
             creator,
             tokenAddress,
             msg.treasuryAddress,
-            msg.dexAdapter,
-            msg.buybackWallet,
+            self.owner,
             msg.presaleRate,
             msg.softCap,
             msg.hardCap,
@@ -787,11 +643,9 @@ contract LaunchpadFactory with Deployable {
             msg.startTime,
             msg.endTime,
             msg.liquidityPercentOfRaised,
-            msg.buybackEnabled,
-            msg.buybackPercentBps,
-            msg.buybackChunkBps,
-            msg.buybackIntervalSeconds,
             presaleAllocation,
+            buyerTokenAllocation,
+            platformTokenFee,
             liquidityAllocation
         );
         let poolAddress: Address = contractAddress(poolInit);
@@ -804,10 +658,11 @@ contract LaunchpadFactory with Deployable {
             value: TOKEN_DEPLOY_VALUE,
             mode: SendIgnoreErrors,
             bounce: false,
-            body: MintToken{to: poolAddress, amount: presaleAllocation + liquidityAllocation}.toCell()
+            body: MintToken{to: poolAddress, amount: buyerTokenAllocation}.toCell()
         });
         deploy(DeployParameters{init: poolInit, value: DEPLOY_VALUE, mode: SendIgnoreErrors, bounce: false, body: Deploy{queryId: launchId}.toCell()});
-        send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: creator, amount: creatorAllocation}.toCell()});
+        send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: self.owner, amount: platformTokenFee}.toCell()});
+        send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: creator, amount: creatorManagedAllocation}.toCell()});
     }
 
     get fun getLaunchCount(): Int {

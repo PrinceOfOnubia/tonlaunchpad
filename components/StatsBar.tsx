@@ -1,12 +1,12 @@
 "use client";
 
-import { Coins, Droplets, Users, TrendingUp } from "lucide-react";
+import { Coins, CircleDollarSign, Users, TrendingUp } from "lucide-react";
 import { usePlatformStats } from "@/lib/hooks";
 import { formatCompact, formatTon } from "@/lib/utils";
 
 /**
  * Order matches the production design (screenshot):
- *   Tokens Launched · Total Liquidity · Active Holders · 24h Volume
+ *   Tokens Launched · Total Raised · Active Holders · 24h Volume
  *
  * When the backend is offline (no NEXT_PUBLIC_API_URL or fetch fails) we render
  * an em-dash so the UI degrades gracefully without showing fake numbers.
@@ -21,9 +21,9 @@ export function StatsBar() {
       value: data ? formatCompact(data.totalTokens, 0) : null,
     },
     {
-      icon: Droplets,
-      label: "Total Liquidity",
-      value: data ? formatTon(data.totalLiquidityTon, 1) : null,
+      icon: CircleDollarSign,
+      label: "Total Raised",
+      value: data ? formatTon(data.totalRaisedTon, 1) : null,
     },
     {
       icon: Users,
@@ -58,7 +58,7 @@ export function StatsBar() {
             </div>
             {item.note && (
               <div className="mt-0.5 text-[10px] font-medium text-amber-600">
-                Indexing soon
+                Volume data coming soon
               </div>
             )}
           </div>

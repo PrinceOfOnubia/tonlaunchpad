@@ -9,8 +9,8 @@ export function Footer() {
           <div className="md:col-span-2">
             <Logo />
             <p className="mt-3 max-w-md text-sm text-ink-500">
-              Presale-driven launchpad for TON jettons with programmatic buybacks. Transparent,
-              on-chain, fair.
+              Fair and transparent TON presales. Simple token launches, on-chain claims, refunds,
+              and creator treasury release.
             </p>
           </div>
 

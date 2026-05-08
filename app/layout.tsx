@@ -7,13 +7,13 @@ import { Footer } from "@/components/Footer";
 export const metadata: Metadata = {
   title: "TonPad — Launch tokens on TON",
   description:
-    "Presale-driven launchpad for TON jettons with programmatic buybacks. Zero hidden fees, transparent on-chain.",
+    "Fair and transparent TON presales with simple on-chain claims, refunds, and creator treasury release.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   ),
   openGraph: {
     title: "TonPad",
-    description: "Presale-driven launchpad for TON jettons with programmatic buybacks.",
+    description: "Fair and transparent TON presales.",
     type: "website",
   },
 };
