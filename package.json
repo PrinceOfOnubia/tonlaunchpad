@@ -5,16 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:contracts": "tact --config tact.config.json --project Launchpad --quiet",
-    "test": "npm run build:contracts --silent && jest --runInBand",
-    "lint": "tsc --noEmit && tsc -p tsconfig.contracts.json --noEmit",
-    "lint:frontend": "tsc --noEmit",
-    "lint:contracts": "tsc -p tsconfig.contracts.json --noEmit"
+    "start": "next start",
+    "contract:build": "tact --config tact.config.json --project Launchpad --quiet",
+    "contract:test": "npm run contract:build --silent && jest --runInBand",
+    "lint": "tsc --noEmit"
   },
   "devDependencies": {
     "@tact-lang/compiler": "1.6.13",
     "@ton/blueprint": "0.44.2",
-    "@ton/core": "0.63.1",
     "@ton/sandbox": "0.42.0",
     "@ton/test-utils": "0.12.0",
     "@types/jest": "^29.5.14",
@@ -29,6 +27,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@ton/core": "0.63.1",
     "@tonconnect/ui-react": "^2.4.4",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
