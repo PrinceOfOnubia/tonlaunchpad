@@ -9,6 +9,7 @@ export interface LaunchTransaction {
 }
 
 const LAUNCH_TOKEN_OPCODE = 1954225128;
+const CONTRIBUTE_OPCODE = 443500403;
 const LAUNCH_VALUE_TON = "1";
 export const DEFAULT_TOKEN_IMAGE_URL = "https://tonlaunchpad.vercel.app/icon.png";
 
@@ -27,17 +28,7 @@ export function buildLaunchTokenTransaction(
   const creatorAddress = requiredAddress(creatorWallet, "connected wallet address");
   const config = normalizeLaunchConfig(form);
 
-  const metadata = beginCell()
-    .storeStringRefTail(
-      JSON.stringify({
-        name: config.name,
-        symbol: config.symbol,
-        description: config.description,
-        image: config.imageUrl ?? DEFAULT_TOKEN_IMAGE_URL,
-        social: config.social,
-      }),
-    )
-    .endCell();
+  const metadata = buildOffchainMetadataCell(config.metadataUrl);
 
   const body = beginCell()
     .store((builder) => {
@@ -95,6 +86,20 @@ export function buildLaunchTokenTransaction(
   return {
     to: factoryAddress.toString(),
     amountNano: toNano(LAUNCH_VALUE_TON).toString(),
+    payload: bytesToBase64(body.toBoc()),
+    validUntil: Math.floor(Date.now() / 1000) + 10 * 60,
+  };
+}
+
+export function buildContributeTransaction(poolAddress: string, amountTon: number): LaunchTransaction {
+  const pool = requiredAddress(poolAddress, "presale pool address");
+  if (!Number.isFinite(amountTon) || amountTon <= 0) {
+    throw new Error("Enter a valid TON amount.");
+  }
+  const body = beginCell().storeUint(CONTRIBUTE_OPCODE, 32).endCell();
+  return {
+    to: pool.toString(),
+    amountNano: toNano(amountTon.toString()).toString(),
     payload: bytesToBase64(body.toBoc()),
     validUntil: Math.floor(Date.now() / 1000) + 10 * 60,
   };
@@ -192,6 +197,13 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
     symbol,
     description,
     imageUrl: form.imageUrl ?? DEFAULT_TOKEN_IMAGE_URL,
+    metadataUrl: form.metadataUrl ?? buildDataMetadataUrl({
+      name,
+      symbol,
+      description,
+      decimals,
+      image: form.imageUrl ?? DEFAULT_TOKEN_IMAGE_URL,
+    }),
     social: form.social,
     decimals,
     totalSupply: toTokenUnits(totalSupply, decimals),
@@ -215,6 +227,21 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
       positiveNumber(form.buyback.rate.intervalMinutes, "Buyback interval") * 60,
     ),
   };
+}
+
+function buildOffchainMetadataCell(url: string) {
+  return beginCell().storeUint(1, 8).storeStringTail(url).endCell();
+}
+
+function buildDataMetadataUrl(metadata: {
+  name: string;
+  symbol: string;
+  description: string;
+  decimals: number;
+  image: string;
+}): string {
+  const json = JSON.stringify(metadata);
+  return `data:application/json,${encodeURIComponent(json)}`;
 }
 
 function requiredAddress(value: string | undefined, label: string): Address {

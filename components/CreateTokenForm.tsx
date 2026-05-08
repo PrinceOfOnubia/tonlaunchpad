@@ -123,7 +123,7 @@ export function CreateTokenForm() {
     }
     setImageFile(f);
     setImagePreview(URL.createObjectURL(f));
-    setMetadataNotice("Logo upload is preview-only on testnet MVP.");
+    setMetadataNotice("Logo will be uploaded and included in hosted token metadata.");
   }
 
   // ---------------------------------------------------------------------
@@ -156,13 +156,38 @@ export function CreateTokenForm() {
 
     setSubmitting(true);
     try {
-      const imageUrl = data.imageUrl || DEFAULT_TOKEN_IMAGE_URL;
+      let imageUrl = data.imageUrl || DEFAULT_TOKEN_IMAGE_URL;
+      let metadataUrl: string | null = null;
       if (imageFile && !data.imageUrl) {
-        setMetadataNotice("Logo upload is preview-only on testnet MVP.");
+        setDeployStatus("Uploading token logo...");
+        try {
+          const uploaded = await api.upload.image(imageFile);
+          imageUrl = uploaded.url;
+          setMetadataNotice("Logo uploaded and included in token metadata.");
+        } catch (err) {
+          console.warn("Logo upload failed; using default token image.", err);
+          setMetadataNotice("Logo upload failed. Using the default token image for this launch.");
+          imageUrl = DEFAULT_TOKEN_IMAGE_URL;
+        }
+      }
+      setDeployStatus("Publishing token metadata...");
+      try {
+        const metadata = await api.metadata.create({
+          name: data.name,
+          symbol: data.symbol,
+          description: data.description,
+          decimals: data.decimals,
+          imageUrl,
+        });
+        metadataUrl = metadata.url;
+      } catch (err) {
+        console.warn("Metadata hosting unavailable; falling back to embedded metadata URL.", err);
+        metadataUrl = null;
       }
       const payload: CreateTokenPayload = {
         ...data,
         imageUrl,
+        metadataUrl,
         creator: wallet,
       };
 
@@ -186,6 +211,7 @@ export function CreateTokenForm() {
         ],
       });
 
+      console.debug("Launch transaction result BOC", result.boc);
       const launchId = `recent-${Date.now().toString(36)}`;
       const createdAt = new Date().toISOString();
       const factoryAddress = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
@@ -218,7 +244,7 @@ export function CreateTokenForm() {
         })
         .catch((err) => {
           console.warn("Indexer temporarily unavailable. Launch kept in local fallback cache.", err);
-        });
+      });
 
       setTxResult(result.boc);
       setExplorerUrl(testnetExplorerUrl({ address: factoryAddress ?? wallet }));
@@ -250,12 +276,12 @@ export function CreateTokenForm() {
         <p className="mt-2 text-xs text-amber-600">
           Presale is being indexed. It may appear shortly.
         </p>
-        {txResult && (
-          <div className="mt-4 rounded-lg bg-ink-50 p-3 text-left">
-            <div className="text-xs font-semibold text-ink-500">Transaction result BOC</div>
-            <code className="mt-1 block break-all text-[11px] text-ink-700">
-              {txResult}
-            </code>
+        {data.name && (
+          <div className="mt-4 rounded-lg bg-ink-50 p-3">
+            <div className="text-sm font-semibold text-ink-900">
+              {data.name} <span className="font-mono text-ink-500">{data.symbol}</span>
+            </div>
+            <div className="mt-1 text-xs font-medium text-amber-600">Pending indexing</div>
           </div>
         )}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">

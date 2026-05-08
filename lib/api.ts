@@ -16,7 +16,8 @@ import type {
   UserPortfolio,
 } from "./types";
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const API_URL = RAW_API_URL && !RAW_API_URL.endsWith("/api") ? `${RAW_API_URL}/api` : RAW_API_URL;
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) {
@@ -210,6 +211,16 @@ export const api = {
         isFormData: true,
       });
     },
+  },
+
+  metadata: {
+    create: (payload: {
+      name: string;
+      symbol: string;
+      description: string;
+      decimals: number;
+      imageUrl: string;
+    }) => request<{ url: string }>("/metadata", { method: "POST", body: payload }),
   },
 };
 

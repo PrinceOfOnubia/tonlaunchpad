@@ -12,6 +12,7 @@ import { PresaleProgress } from "@/components/PresaleProgress";
 import { BuybackBadge } from "@/components/BuybackBadge";
 import { TransactionHistory } from "@/components/TransactionHistory";
 import type { Token } from "@/lib/types";
+import { useEffectivePresale } from "@/lib/presaleStatus";
 
 export default function TokenPage() {
   const params = useParams<{ id: string }>();
@@ -42,7 +43,13 @@ export default function TokenPage() {
     );
   }
 
-  const isLive = token.presale.status === "live" || token.presale.status === "upcoming";
+  return <TokenContent token={token} />;
+}
+
+function TokenContent({ token }: { token: Token }) {
+  const presale = useEffectivePresale(token.presale);
+  const effectiveToken = { ...token, presale };
+  const isLive = presale.status === "live" || presale.status === "upcoming";
 
   return (
     <div className="container-page py-8 sm:py-12">
@@ -53,25 +60,25 @@ export default function TokenPage() {
         <ArrowLeft size={14} /> All tokens
       </Link>
 
-      <TokenHeader token={token} />
+      <TokenHeader token={effectiveToken} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           {!isLive && <TokenChart tokenId={token.id} />}
-          {isLive && <PresaleProgress presale={token.presale} variant="detailed" />}
+          {isLive && <PresaleProgress presale={presale} variant="detailed" />}
 
-          <BuybackBadge buyback={token.buyback} variant="card" />
+          <BuybackBadge buyback={effectiveToken.buyback} variant="card" />
 
-          <Tokenomics token={token} />
+          <Tokenomics token={effectiveToken} />
 
-          {!isLive && <PresaleProgress presale={token.presale} variant="detailed" />}
+          {!isLive && <PresaleProgress presale={presale} variant="detailed" />}
 
-          <TransactionHistory tokenId={token.id} symbol={token.symbol} />
+          <TransactionHistory tokenId={effectiveToken.id} symbol={effectiveToken.symbol} />
         </div>
 
         <div className="lg:col-span-1">
           <div className="lg:sticky lg:top-24">
-            <PresalePanel token={token} />
+            <PresalePanel token={effectiveToken} />
           </div>
         </div>
       </div>

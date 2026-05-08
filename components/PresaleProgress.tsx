@@ -1,6 +1,9 @@
+"use client";
+
 import { cn, formatTon, timeUntil } from "@/lib/utils";
 import type { PresaleInfo } from "@/lib/types";
 import { Users, Clock } from "lucide-react";
+import { useEffectivePresale } from "@/lib/presaleStatus";
 
 interface Props {
   presale: PresaleInfo;
@@ -18,6 +21,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function PresaleProgress({ presale, variant = "compact", className }: Props) {
+  presale = useEffectivePresale(presale, 5_000);
   const pct = Math.min(100, presale.hardCap > 0 ? (presale.raised / presale.hardCap) * 100 : 0);
   const softPct =
     presale.hardCap > 0 ? Math.min(100, (presale.softCap / presale.hardCap) * 100) : 0;

@@ -7,6 +7,7 @@ import type { Token } from "@/lib/types";
 import { cn, formatCompact, formatPercent, formatPrice, formatTon } from "@/lib/utils";
 import { PresaleProgress } from "./PresaleProgress";
 import { BuybackBadge } from "./BuybackBadge";
+import { useEffectivePresale } from "@/lib/presaleStatus";
 
 interface Props {
   token: Token;
@@ -22,7 +23,8 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function TokenCard({ token, className }: Props) {
-  const status = token.presale?.status ?? "upcoming";
+  const presale = useEffectivePresale(token.presale, 5_000);
+  const status = presale.status;
   const isLive = status === "live" || status === "upcoming";
   const positive = (token.priceChange24h ?? 0) >= 0;
   const symbol = token.symbol || "TKN";
@@ -69,7 +71,7 @@ export function TokenCard({ token, className }: Props) {
 
       {isLive ? (
         <div className="mt-4">
-          <PresaleProgress presale={token.presale} variant="compact" />
+          <PresaleProgress presale={presale} variant="compact" />
         </div>
       ) : (
         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-ink-100 pt-3 text-xs">

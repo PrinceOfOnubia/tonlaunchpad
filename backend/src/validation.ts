@@ -29,6 +29,7 @@ export const createLaunchSchema = z.object({
   symbol: z.string().min(1).max(16),
   description: z.string().max(1000).optional().default(""),
   imageUrl: z.string().url().nullable().optional(),
+  metadataUrl: z.string().url().nullable().optional(),
   logoUrl: z.string().url().nullable().optional(),
   creator: tonAddressSchema.optional(),
   creatorWallet: tonAddressSchema.optional(),

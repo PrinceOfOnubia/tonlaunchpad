@@ -12,6 +12,8 @@ export const config = {
   network: process.env.NETWORK ?? "testnet",
   port: Number(process.env.PORT ?? 4000),
   frontendOrigin: process.env.FRONTEND_ORIGIN ?? "https://tonlaunchpad.vercel.app",
+  publicBaseUrl: (process.env.PUBLIC_UPLOAD_BASE_URL ?? process.env.BACKEND_PUBLIC_URL ?? "").replace(/\/$/, ""),
+  uploadDir: process.env.UPLOAD_DIR ?? "backend/uploads",
   indexerEnabled: process.env.INDEXER_ENABLED !== "false",
   indexerIntervalMs: Number(process.env.INDEXER_INTERVAL_MS ?? 30_000),
 };

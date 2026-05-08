@@ -71,6 +71,8 @@ export interface Token {
   id: string;
   /** On-chain TON jetton master address — null until deploy succeeds */
   address: string | null;
+  presalePoolAddress?: string | null;
+  metadataUrl?: string | null;
   name: string;
   symbol: string;
   description: string;
@@ -162,6 +164,7 @@ export interface CreateTokenPayload {
   symbol: string;
   description: string;
   imageUrl: string | null;
+  metadataUrl?: string | null;
   totalSupply: number;
   decimals: number;
   allocations: TokenAllocations;

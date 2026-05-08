@@ -19,6 +19,7 @@ export function launchToToken(launch: Launch) {
   return {
     id: launch.id,
     address: launch.tokenMasterAddress ?? launch.presalePoolAddress ?? launch.factoryAddress,
+    presalePoolAddress: launch.presalePoolAddress,
     name: launch.tokenName,
     symbol: launch.symbol,
     description: launch.description,

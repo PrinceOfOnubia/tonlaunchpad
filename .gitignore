@@ -14,6 +14,7 @@ out
 # TON/Tact build
 build/
 backend/dist/
+backend/uploads/
 
 # TypeScript
 tsconfig.tsbuildinfo

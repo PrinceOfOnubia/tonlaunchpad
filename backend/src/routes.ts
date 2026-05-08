@@ -1,11 +1,22 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { Prisma } from "@prisma/client";
+import multer from "multer";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
 import { config } from "./config";
 import { prisma } from "./db";
 import { computeStatus, launchToToken, txToApi } from "./mappers";
 import { createLaunchSchema, listQuerySchema, tonAddressSchema } from "./validation";
 
 export const router = Router();
+mkdirSync(config.uploadDir, { recursive: true });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    cb(null, file.mimetype.startsWith("image/"));
+  },
+});
 const reroute = (req: Request, res: Response, next: NextFunction, url: string) => {
   req.url = url;
   (router as unknown as { handle: (req: Request, res: Response, next: NextFunction) => void }).handle(
@@ -17,6 +28,27 @@ const reroute = (req: Request, res: Response, next: NextFunction, url: string) =
 
 router.get("/health", (_req, res) => {
   res.json({ ok: true, network: config.network, indexedFactory: config.factoryAddress });
+});
+
+router.post("/api/upload/image", upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ message: "Image file is required" });
+  const extension = safeExtension(req.file.originalname, req.file.mimetype);
+  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
+  writeFileSync(join(config.uploadDir, fileName), req.file.buffer);
+  res.status(201).json({ url: publicUrl(req, `/uploads/${fileName}`) });
+});
+
+router.post("/api/metadata", (req, res) => {
+  const metadata = {
+    name: String(req.body?.name ?? "TONPad Token"),
+    symbol: String(req.body?.symbol ?? "TKN"),
+    description: String(req.body?.description ?? ""),
+    decimals: Number(req.body?.decimals ?? 9),
+    image: String(req.body?.imageUrl ?? "https://tonlaunchpad.vercel.app/icon.png"),
+  };
+  const fileName = `${Date.now()}-${metadata.symbol.toLowerCase().replace(/[^a-z0-9]/g, "") || "token"}.json`;
+  writeFileSync(join(config.uploadDir, fileName), JSON.stringify(metadata, null, 2));
+  res.status(201).json({ url: publicUrl(req, `/uploads/${fileName}`) });
 });
 
 router.get("/api/launches", async (req, res, next) => {
@@ -454,4 +486,28 @@ function emptyProfile(wallet: string, note: string) {
     },
     note,
   };
+}
+
+function publicUrl(req: Request, path: string) {
+  const base = config.publicBaseUrl || `${req.protocol}://${req.get("host")}`;
+  return `${base}${path}`;
+}
+
+function safeExtension(originalName: string, mimeType: string) {
+  const fromName = extname(originalName).toLowerCase();
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(fromName)) return fromName;
+  switch (mimeType) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/gif":
+      return ".gif";
+    case "image/webp":
+      return ".webp";
+    case "image/svg+xml":
+      return ".svg";
+    default:
+      return ".img";
+  }
 }

@@ -21,6 +21,7 @@ app.use(
   }),
 );
 app.use(express.json({ limit: "1mb" }));
+app.use("/uploads", express.static(config.uploadDir));
 app.use(router);
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {

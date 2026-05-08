@@ -1,5 +1,6 @@
 import type { Paginated, Token, TokenListParams, Transaction, UserPortfolio } from "./types";
 import { DEFAULT_TOKEN_IMAGE_URL } from "./tonLaunchpad";
+import { derivePresaleStatus } from "./presaleStatus";
 
 export const RECENT_LAUNCHES_KEY = "tonpad_recent_launches";
 
@@ -42,7 +43,7 @@ export function getRecentLaunchToken(id: string): Token | null {
 }
 
 export function recentLaunchesPage(params: TokenListParams = {}): Paginated<Token> {
-  let items = getRecentLaunches().map((launch) => launch.token);
+  let items = getRecentLaunches().map((launch) => withDerivedStatus(launch.token));
 
   if (params.search) {
     const q = params.search.toLowerCase();
@@ -63,14 +64,14 @@ export function recentLaunchesPage(params: TokenListParams = {}): Paginated<Toke
 
 export function recentTrendingTokens(limit: number): Token[] {
   return getRecentLaunches()
-    .map((launch) => launch.token)
+    .map((launch) => withDerivedStatus(launch.token))
     .slice(0, limit);
 }
 
 export function recentCreatedTokens(wallet: string): Token[] {
   return getRecentLaunches()
     .filter((launch) => sameAddress(launch.creator, wallet))
-    .map((launch) => launch.token);
+    .map((launch) => withDerivedStatus(launch.token));
 }
 
 export function recentWalletTransactions(wallet: string): Transaction[] {
@@ -104,6 +105,7 @@ export function tokenFromLaunchInput(args: {
     symbol: string;
     description: string;
     imageUrl: string | null;
+    metadataUrl?: string | null;
     totalSupply: number;
     decimals: number;
     allocations: Token["allocations"];
@@ -119,6 +121,8 @@ export function tokenFromLaunchInput(args: {
   return normalizeToken({
     id: args.id,
     address: args.factoryAddress ?? null,
+    presalePoolAddress: null,
+    metadataUrl: args.form.metadataUrl ?? null,
     name: args.form.name,
     symbol: args.form.symbol,
     description: args.form.description,
@@ -157,6 +161,8 @@ export function normalizeToken(input: unknown): Token {
   return {
     id: stringValue(source.id, `token-${Date.now()}`),
     address: nullableString(source.address),
+    presalePoolAddress: nullableString(source.presalePoolAddress),
+    metadataUrl: nullableString(source.metadataUrl),
     name: stringValue(source.name, "Untitled Token"),
     symbol: stringValue(source.symbol, "TKN").toUpperCase(),
     description: stringValue(source.description, ""),
@@ -265,4 +271,14 @@ function tokenStatus(value: unknown): Token["presale"]["status"] {
 
 function sameAddress(left: string | undefined, right: string): boolean {
   return !!left && left.toLowerCase() === right.toLowerCase();
+}
+
+function withDerivedStatus(token: Token): Token {
+  return {
+    ...token,
+    presale: {
+      ...token.presale,
+      status: derivePresaleStatus(token.presale),
+    },
+  };
 }

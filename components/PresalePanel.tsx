@@ -5,7 +5,8 @@ import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useMyContribution } from "@/lib/hooks";
-import { normalizeTonConnectError } from "@/lib/tonLaunchpad";
+import { buildContributeTransaction, normalizeTonConnectError } from "@/lib/tonLaunchpad";
+import { hardCapRemaining, useEffectivePresale } from "@/lib/presaleStatus";
 import { cn, formatTon, timeUntil } from "@/lib/utils";
 import type { Token } from "@/lib/types";
 
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function PresalePanel({ token }: Props) {
+  const presale = useEffectivePresale(token.presale);
   const wallet = useTonAddress();
   const [tonConnectUI] = useTonConnectUI();
   const [amount, setAmount] = useState("");
@@ -28,12 +30,14 @@ export function PresalePanel({ token }: Props) {
 
   const numAmount = parseFloat(amount);
   const validAmount = !Number.isNaN(numAmount) && numAmount > 0;
-  const tokensReceived = validAmount ? numAmount * token.presale.rate : 0;
+  const tokensReceived = validAmount ? numAmount * presale.rate : 0;
 
-  const min = token.presale.minContribution;
-  const max = token.presale.maxContribution;
+  const min = presale.minContribution;
+  const max = presale.maxContribution;
+  const remaining = hardCapRemaining(presale);
   const belowMin = min !== undefined && validAmount && numAmount < min;
   const aboveMax = max !== undefined && validAmount && numAmount > max;
+  const aboveRemaining = validAmount && numAmount > remaining;
 
   async function send(boc: { to: string; amountNano: string; payload: string; validUntil: number }) {
     return tonConnectUI.sendTransaction({
@@ -43,11 +47,39 @@ export function PresalePanel({ token }: Props) {
   }
 
   async function handleContribute() {
-    if (!wallet || !validAmount || belowMin || aboveMax) return;
+    if (!wallet) {
+      tonConnectUI.openModal();
+      return;
+    }
+    if (presale.status !== "live") {
+      setError(presale.status === "upcoming" ? "Presale has not started yet." : "Presale has ended.");
+      return;
+    }
+    if (!validAmount) {
+      setError("Enter a valid TON amount.");
+      return;
+    }
+    if (belowMin) {
+      setError(`Minimum contribution is ${min} TON.`);
+      return;
+    }
+    if (aboveMax) {
+      setError(`Maximum contribution is ${max} TON.`);
+      return;
+    }
+    if (aboveRemaining) {
+      setError(`Only ${remaining.toFixed(2)} TON remains before the hard cap.`);
+      return;
+    }
+    const poolAddress = token.presalePoolAddress;
+    if (!poolAddress) {
+      setError("Presale pool is still being indexed. Please try again shortly.");
+      return;
+    }
     setBusy("contribute");
     setError(null);
     try {
-      const boc = await api.presale.contribute(token.id, numAmount, wallet);
+      const boc = buildContributeTransaction(poolAddress, numAmount);
       const result = await send(boc);
       setTxHash(result.boc);
       setAmount("");
@@ -101,20 +133,20 @@ export function PresalePanel({ token }: Props) {
     <div className="glass space-y-4 p-6">
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg font-semibold text-ink-900">
-          {labelForStatus(token.presale.status)}
+          {labelForStatus(presale.status)}
         </h3>
         <span className="font-mono text-xs text-ink-500">
-          1 TON = {token.presale.rate.toLocaleString()} {token.symbol}
+          1 TON = {presale.rate.toLocaleString()} {token.symbol}
         </span>
       </div>
 
-      {token.presale.status === "upcoming" && (
+      {presale.status === "upcoming" && (
         <InfoBox>
-          Presale starts in <strong>{timeUntil(token.presale.startTime)}</strong>
+          Presale starts in <strong>{timeUntil(presale.startTime)}</strong>
         </InfoBox>
       )}
 
-      {token.presale.status === "live" && (
+      {presale.status === "live" && (
         <ContributeForm
           symbol={token.symbol}
           amount={amount}
@@ -124,14 +156,16 @@ export function PresalePanel({ token }: Props) {
           max={max}
           belowMin={belowMin}
           aboveMax={aboveMax}
+          aboveRemaining={aboveRemaining}
+          remaining={remaining}
           wallet={wallet || null}
           busy={busy === "contribute"}
           onSubmit={handleContribute}
-          endTime={token.presale.endTime}
+          endTime={presale.endTime}
         />
       )}
 
-      {token.presale.status === "succeeded" && myContrib && myContrib.tokensOwed > 0 && (
+      {presale.status === "succeeded" && myContrib && myContrib.tokensOwed > 0 && (
         <div className="space-y-3">
           <div className="rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
             <div className="text-sm text-emerald-700">Your allocation</div>
@@ -152,7 +186,7 @@ export function PresalePanel({ token }: Props) {
         </div>
       )}
 
-      {token.presale.status === "failed" && myContrib && myContrib.amountTon > 0 && (
+      {presale.status === "failed" && myContrib && myContrib.amountTon > 0 && (
         <div className="space-y-3">
           <div className="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200">
             <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
@@ -172,7 +206,7 @@ export function PresalePanel({ token }: Props) {
         </div>
       )}
 
-      {token.presale.status === "finalized" && (
+      {presale.status === "finalized" && (
         <InfoBox>Presale finalized — token is live on DEX. Trading happens off-platform.</InfoBox>
       )}
 
@@ -190,7 +224,7 @@ export function PresalePanel({ token }: Props) {
         </div>
       )}
 
-      {!wallet && token.presale.status !== "finalized" && (
+      {!wallet && presale.status !== "finalized" && (
         <div className="flex items-center gap-2 rounded-lg bg-ton-50 p-3 text-sm text-ton-700 ring-1 ring-ton-100">
           <Wallet size={16} />
           Connect your TON wallet to participate
@@ -209,6 +243,8 @@ function ContributeForm(props: {
   max?: number;
   belowMin: boolean;
   aboveMax: boolean;
+  aboveRemaining: boolean;
+  remaining: number;
   wallet: string | null;
   busy: boolean;
   onSubmit: () => void;
@@ -238,17 +274,18 @@ function ContributeForm(props: {
             placeholder="0.0"
             className={cn(
               "input-base pr-16 text-right font-mono text-lg",
-              (props.belowMin || props.aboveMax) && "ring-2 ring-red-300",
+              (props.belowMin || props.aboveMax || props.aboveRemaining) && "ring-2 ring-red-300",
             )}
           />
           <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink-500">
             TON
           </div>
         </div>
-        {(props.belowMin || props.aboveMax) && (
+        {(props.belowMin || props.aboveMax || props.aboveRemaining) && (
           <div className="mt-1 text-xs text-red-600">
             {props.belowMin && `Below minimum of ${props.min} TON`}
             {props.aboveMax && `Above maximum of ${props.max} TON`}
+            {props.aboveRemaining && `Only ${props.remaining.toFixed(2)} TON remains before hard cap`}
           </div>
         )}
       </div>
@@ -264,11 +301,11 @@ function ContributeForm(props: {
       <button
         onClick={props.onSubmit}
         disabled={
-          !props.wallet ||
-          !props.amount ||
+          (!!props.wallet && !props.amount) ||
           props.busy ||
           props.belowMin ||
-          props.aboveMax
+          props.aboveMax ||
+          props.aboveRemaining
         }
         className="btn-primary w-full"
       >
