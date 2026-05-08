@@ -42,7 +42,7 @@ Required backend env:
 DATABASE_URL=
 TONCENTER_ENDPOINT=https://testnet.toncenter.com/api/v2/jsonRPC
 TONCENTER_API_KEY=
-FACTORY_ADDRESS=
+FACTORY_ADDRESS=EQARP90pfupm_ob9jlKzxqiq0eM1iGAHJep40a3cvxzy8YrL
 NETWORK=testnet
 PORT=4000
 FRONTEND_ORIGIN=https://tonlaunchpad.vercel.app

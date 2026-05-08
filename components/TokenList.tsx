@@ -27,7 +27,7 @@ export function TokenList() {
   if (!data || data.items.length === 0) {
     return (
       <Empty>
-        No launches match your filters yet.{" "}
+        {emptyMessage(status)}{" "}
         <Link href="/create" className="font-semibold text-ton-600 hover:text-ton-700">
           Launch one →
         </Link>
@@ -47,6 +47,22 @@ export function TokenList() {
       </div>
     </>
   );
+}
+
+function emptyMessage(status: string) {
+  switch (status) {
+    case "live":
+      return "No live presales yet.";
+    case "upcoming":
+      return "No upcoming launches yet.";
+    case "trending":
+      return "No trending launches yet.";
+    case "concluded":
+    case "succeeded":
+      return "No concluded presales yet.";
+    default:
+      return "No launches match your filters yet.";
+  }
 }
 
 function Empty({ children }: { children: React.ReactNode }) {

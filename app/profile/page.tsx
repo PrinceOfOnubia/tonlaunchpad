@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
-import { Loader2, Wallet } from "lucide-react";
+import { ExternalLink, Loader2, Wallet } from "lucide-react";
 import { useUserPortfolio, useUserCreated, useUserTransactions } from "@/lib/hooks";
 import { TokenCard } from "@/components/TokenCard";
 import { cn, formatPercent, formatTon, shortAddress, timeAgo } from "@/lib/utils";
@@ -179,7 +179,7 @@ function HistoryTab({ wallet }: { wallet: string }) {
   const { data, isLoading, error } = useUserTransactions(wallet);
   if (isLoading) return <CenterSpinner />;
   if (error) return <Empty>Failed to load transactions</Empty>;
-  if (!data || data.length === 0) return <Empty>No transactions yet</Empty>;
+  if (!data || data.length === 0) return <Empty>No transactions found</Empty>;
 
   return (
     <div className="glass overflow-hidden">
@@ -204,19 +204,39 @@ const TX_LABEL: Record<TxKind, { label: string; color: string }> = {
 
 function TxRow({ tx }: { tx: Transaction }) {
   const meta = TX_LABEL[tx.kind];
+  const explorer = tx.hash
+    ? `https://testnet.tonviewer.com/transaction/${encodeURIComponent(tx.hash)}`
+    : tx.relatedAddress
+      ? `https://testnet.tonviewer.com/${encodeURIComponent(tx.relatedAddress)}`
+      : `https://testnet.tonviewer.com/${encodeURIComponent(tx.wallet)}`;
   return (
     <li className="flex items-center justify-between px-5 py-3">
       <div>
-        <div className={cn("text-sm font-semibold", meta.color)}>{meta.label}</div>
+        <div className={cn("text-sm font-semibold", meta.color)}>
+          {meta.label}
+          {tx.tokenSymbol ? <span className="ml-2 text-ink-700">{tx.tokenSymbol}</span> : null}
+        </div>
         <div className="text-xs text-ink-500">
-          {timeAgo(tx.timestamp)} · {shortAddress(tx.hash, 6, 4)}
+          {tx.tokenName ? `${tx.tokenName} · ` : ""}
+          {timeAgo(tx.timestamp)} · {shortAddress(tx.hash || tx.relatedAddress || tx.wallet, 6, 4)}
         </div>
       </div>
-      <div className="text-right font-mono text-sm">
-        <div className="font-semibold text-ink-900">{formatTon(tx.amountTon)}</div>
-        <div className="text-xs text-ink-500">
-          {tx.amountToken.toLocaleString(undefined, { maximumFractionDigits: 2 })} tokens
+      <div className="flex items-center gap-3">
+        <div className="text-right font-mono text-sm">
+          <div className="font-semibold text-ink-900">{formatTon(tx.amountTon)}</div>
+          <div className="text-xs text-ink-500">
+            {tx.amountToken.toLocaleString(undefined, { maximumFractionDigits: 2 })} tokens
+          </div>
         </div>
+        <a
+          href={explorer}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="rounded-md p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ton-600"
+          aria-label="Open in Tonviewer"
+        >
+          <ExternalLink size={15} />
+        </a>
       </div>
     </li>
   );

@@ -1,5 +1,7 @@
 import type { Launch, Transaction } from "@prisma/client";
 
+type TransactionWithLaunch = Transaction & { launch?: Launch | null };
+
 export function launchStatus(launch: Launch): "upcoming" | "live" | "succeeded" | "failed" | "finalized" {
   return launch.status;
 }
@@ -55,7 +57,7 @@ export function launchToToken(launch: Launch) {
   };
 }
 
-export function txToApi(tx: Transaction) {
+export function txToApi(tx: TransactionWithLaunch) {
   return {
     id: tx.id,
     hash: tx.txHash,
@@ -65,6 +67,9 @@ export function txToApi(tx: Transaction) {
     timestamp: tx.timestamp.toISOString(),
     wallet: tx.walletAddress,
     tokenId: tx.launchId,
+    tokenName: tx.launch?.tokenName,
+    tokenSymbol: tx.launch?.symbol,
+    relatedAddress: tx.launch?.presalePoolAddress ?? tx.launch?.tokenMasterAddress ?? tx.launch?.creatorWallet,
   };
 }
 

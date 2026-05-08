@@ -71,6 +71,7 @@ router.get("/api/launches", async (req, res, next) => {
       where.OR = [
         { tokenName: { contains: query.search, mode: "insensitive" } },
         { symbol: { contains: query.search, mode: "insensitive" } },
+        { creatorWallet: { contains: query.search, mode: "insensitive" } },
         { tokenMasterAddress: { contains: query.search, mode: "insensitive" } },
         { presalePoolAddress: { contains: query.search, mode: "insensitive" } },
       ];
@@ -270,7 +271,7 @@ router.get("/api/profile/:wallet", async (req, res, next) => {
         Promise.all([
           prisma.launch.findMany({ where: { creatorWallet: wallet }, orderBy: { createdAt: "desc" } }),
           prisma.holder.findMany({ where: { walletAddress: wallet, tokenBalance: { gt: 0 } }, include: { launch: true } }),
-          prisma.transaction.findMany({ where: { walletAddress: wallet }, orderBy: { timestamp: "desc" }, take: 100 }),
+          prisma.transaction.findMany({ where: { walletAddress: wallet }, include: { launch: true }, orderBy: { timestamp: "desc" }, take: 100 }),
           prisma.transaction.findMany({
             where: { walletAddress: wallet, type: "contribute" },
             include: { launch: true },
@@ -328,6 +329,7 @@ router.get("/api/transactions/:wallet", async (req, res, next) => {
       () =>
         prisma.transaction.findMany({
           where: { walletAddress: wallet },
+          include: { launch: true },
           orderBy: { timestamp: "desc" },
           take: 100,
         }),
@@ -345,6 +347,31 @@ router.get("/api/tokens", (req, res, next) => {
 });
 router.get("/api/tokens/trending", (req, res, next) => {
   reroute(req, res, next, "/api/launches?status=trending");
+});
+router.get("/api/tokens/:id/transactions", async (req, res, next) => {
+  try {
+    const limit = Math.min(Number(req.query.limit ?? 25), 100);
+    const launch = await prisma.launch.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id },
+          { tokenMasterAddress: req.params.id },
+          { presalePoolAddress: req.params.id },
+          { txHash: req.params.id },
+        ],
+      },
+    });
+    if (!launch) return res.json([]);
+    const transactions = await prisma.transaction.findMany({
+      where: { launchId: launch.id },
+      include: { launch: true },
+      orderBy: { timestamp: "desc" },
+      take: limit,
+    });
+    res.json(transactions.map(txToApi));
+  } catch (err) {
+    next(err);
+  }
 });
 router.get("/api/tokens/:id", (req, res, next) => {
   reroute(req, res, next, `/api/launches/${req.params.id}`);
@@ -454,6 +481,8 @@ function orderByFor(sort: string, trending: boolean): Prisma.LaunchOrderByWithRe
   switch (sort) {
     case "oldest":
       return [{ createdAt: "asc" }];
+    case "marketCap":
+      return [{ raisedTon: "desc" }, { updatedAt: "desc" }];
     case "volume":
     case "volume24h":
     case "raised":

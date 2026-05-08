@@ -102,6 +102,9 @@ export interface Transaction {
   timestamp: string;
   wallet: string;
   tokenId: string;
+  tokenName?: string;
+  tokenSymbol?: string;
+  relatedAddress?: string | null;
 }
 
 // -----------------------------------------------------------------------------

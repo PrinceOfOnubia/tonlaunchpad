@@ -34,7 +34,7 @@ export function Filters() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or symbol…"
+          placeholder="Search name, symbol, creator, or address..."
           className="input-base pl-9"
         />
       </div>
