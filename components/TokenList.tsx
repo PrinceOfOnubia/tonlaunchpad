@@ -27,7 +27,7 @@ export function TokenList() {
   if (!data || data.items.length === 0) {
     return (
       <Empty>
-        No tokens match your filters yet.{" "}
+        No indexed tokens yet. Recent launches may appear shortly after testnet indexing.{" "}
         <Link href="/create" className="font-semibold text-ton-600 hover:text-ton-700">
           Launch one →
         </Link>

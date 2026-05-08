@@ -10,6 +10,7 @@ export interface LaunchTransaction {
 
 const LAUNCH_TOKEN_OPCODE = 1954225128;
 const LAUNCH_VALUE_TON = "1";
+export const DEFAULT_TOKEN_IMAGE_URL = "https://tonlaunchpad.vercel.app/icon.png";
 
 export function buildLaunchTokenTransaction(
   form: CreateTokenPayload,
@@ -32,7 +33,7 @@ export function buildLaunchTokenTransaction(
         name: config.name,
         symbol: config.symbol,
         description: config.description,
-        image: config.imageUrl,
+        image: config.imageUrl ?? DEFAULT_TOKEN_IMAGE_URL,
         social: config.social,
       }),
     )
@@ -116,6 +117,36 @@ export function errorMessage(err: unknown): string {
   return "Transaction rejected or failed.";
 }
 
+export function normalizeTonConnectError(err: unknown): string {
+  const raw = errorMessage(err);
+  const text = raw.toLowerCase();
+
+  if (
+    text.includes("reject") ||
+    text.includes("decline") ||
+    text.includes("cancel") ||
+    text.includes("user denied") ||
+    text.includes("user rejected")
+  ) {
+    return "Transaction declined by user.";
+  }
+
+  if (
+    text.includes("insufficient") ||
+    text.includes("not enough") ||
+    text.includes("balance") ||
+    text.includes("gas")
+  ) {
+    return "Insufficient testnet TON for gas.";
+  }
+
+  if (text.includes("wallet") && (text.includes("connect") || text.includes("not connected"))) {
+    return "Please connect your wallet first.";
+  }
+
+  return "Transaction failed. Please check your balance, network, and try again.";
+}
+
 function normalizeLaunchConfig(form: CreateTokenPayload) {
   const name = form.name.trim();
   const symbol = form.symbol.trim().toUpperCase();
@@ -160,7 +191,7 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
     name,
     symbol,
     description,
-    imageUrl: form.imageUrl,
+    imageUrl: form.imageUrl ?? DEFAULT_TOKEN_IMAGE_URL,
     social: form.social,
     decimals,
     totalSupply: toTokenUnits(totalSupply, decimals),

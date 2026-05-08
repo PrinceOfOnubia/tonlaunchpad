@@ -5,6 +5,7 @@ import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useMyContribution } from "@/lib/hooks";
+import { normalizeTonConnectError } from "@/lib/tonLaunchpad";
 import { cn, formatTon, timeUntil } from "@/lib/utils";
 import type { Token } from "@/lib/types";
 
@@ -52,7 +53,8 @@ export function PresalePanel({ token }: Props) {
       setAmount("");
       refreshContrib();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Transaction rejected or failed");
+      console.error("Contribution transaction failed", err);
+      setError(err instanceof ApiError ? err.message : normalizeTonConnectError(err));
     } finally {
       setBusy(null);
     }
@@ -68,7 +70,8 @@ export function PresalePanel({ token }: Props) {
       setTxHash(result.boc);
       refreshContrib();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Transaction rejected or failed");
+      console.error("Claim transaction failed", err);
+      setError(err instanceof ApiError ? err.message : normalizeTonConnectError(err));
     } finally {
       setBusy(null);
     }
@@ -84,7 +87,8 @@ export function PresalePanel({ token }: Props) {
       setTxHash(result.boc);
       refreshContrib();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Transaction rejected or failed");
+      console.error("Refund transaction failed", err);
+      setError(err instanceof ApiError ? err.message : normalizeTonConnectError(err));
     } finally {
       setBusy(null);
     }

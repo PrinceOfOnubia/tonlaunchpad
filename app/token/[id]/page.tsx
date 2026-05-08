@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, AtSign, ExternalLink, Globe, Loader2, Send } from "lucide-react";
@@ -80,16 +81,18 @@ export default function TokenPage() {
 
 function TokenHeader({ token }: { token: Token }) {
   const positive = token.priceChange24h >= 0;
-  const initials = token.symbol.slice(0, 2).toUpperCase();
+  const [imageFailed, setImageFailed] = useState(false);
+  const initials = (token.symbol || "TK").slice(0, 2).toUpperCase();
 
   return (
     <div className="glass p-5 sm:p-6">
       <div className="flex flex-wrap items-start gap-4">
-        {token.imageUrl ? (
+        {token.imageUrl && !imageFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={token.imageUrl}
-            alt={token.name}
+            alt={token.name || token.symbol || "Token logo"}
+            onError={() => setImageFailed(true)}
             className="h-16 w-16 rounded-2xl object-cover ring-2 ring-white shadow-sm"
           />
         ) : (

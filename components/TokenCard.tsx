@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import type { Token } from "@/lib/types";
 import { cn, formatCompact, formatPercent, formatPrice, formatTon } from "@/lib/utils";
@@ -19,8 +22,11 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function TokenCard({ token, className }: Props) {
-  const isLive = token.presale.status === "live" || token.presale.status === "upcoming";
-  const positive = token.priceChange24h >= 0;
+  const status = token.presale?.status ?? "upcoming";
+  const isLive = status === "live" || status === "upcoming";
+  const positive = (token.priceChange24h ?? 0) >= 0;
+  const symbol = token.symbol || "TKN";
+  const name = token.name || "Untitled Token";
 
   return (
     <Link
@@ -36,20 +42,25 @@ export function TokenCard({ token, className }: Props) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate font-display text-base font-semibold text-ink-900">
-              {token.name}
+              {name}
             </h3>
             <span className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-600">
-              {token.symbol}
+              {symbol}
             </span>
           </div>
+          {token.address && (
+            <div className="mt-1 truncate font-mono text-[11px] text-ink-400">
+              {token.address}
+            </div>
+          )}
           <div className="mt-1 flex items-center gap-1.5">
             <span
               className={cn(
                 "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                STATUS_COLOR[token.presale.status] ?? STATUS_COLOR.upcoming,
+                STATUS_COLOR[status] ?? STATUS_COLOR.upcoming,
               )}
             >
-              {token.presale.status}
+              {status}
             </span>
             <BuybackBadge buyback={token.buyback} />
           </div>
@@ -93,13 +104,15 @@ export function TokenCard({ token, className }: Props) {
 }
 
 function TokenAvatar({ token }: { token: Token }) {
-  const initials = token.symbol.slice(0, 2).toUpperCase();
-  if (token.imageUrl) {
+  const [failed, setFailed] = useState(false);
+  const initials = (token.symbol || "TK").slice(0, 2).toUpperCase();
+  if (token.imageUrl && !failed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={token.imageUrl}
-        alt={token.name}
+        alt={token.name || token.symbol || "Token logo"}
+        onError={() => setFailed(true)}
         className="h-12 w-12 shrink-0 rounded-full object-cover ring-2 ring-white"
       />
     );

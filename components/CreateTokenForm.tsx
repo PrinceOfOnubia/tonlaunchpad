@@ -14,7 +14,6 @@ import {
   Rocket,
   Wallet,
 } from "lucide-react";
-import { api } from "@/lib/api";
 import {
   BUYBACK_PRESETS,
   DEFAULT_BUYBACK_PRESET_ID,
@@ -32,9 +31,11 @@ import {
 import type { CreateTokenPayload } from "@/lib/types";
 import {
   buildLaunchTokenTransaction,
-  errorMessage,
+  DEFAULT_TOKEN_IMAGE_URL,
   getLaunchValidationError,
+  normalizeTonConnectError,
 } from "@/lib/tonLaunchpad";
+import { saveRecentLaunch, tokenFromLaunchInput } from "@/lib/recentLaunches";
 import { TokenPreview } from "./TokenPreview";
 
 type Step = 0 | 1 | 2 | 3 | 4;
@@ -92,8 +93,10 @@ export function CreateTokenForm() {
   const [submitting, setSubmitting] = useState(false);
   const [deployStatus, setDeployStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [metadataNotice, setMetadataNotice] = useState<string | null>(null);
   const [deployedId, setDeployedId] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<string | null>(null);
+  const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------
   // Validation per step
@@ -119,6 +122,7 @@ export function CreateTokenForm() {
     }
     setImageFile(f);
     setImagePreview(URL.createObjectURL(f));
+    setMetadataNotice("Logo upload is preview-only on testnet MVP.");
   }
 
   // ---------------------------------------------------------------------
@@ -128,6 +132,7 @@ export function CreateTokenForm() {
     setError(null);
     setDeployStatus(null);
     setTxResult(null);
+    setExplorerUrl(null);
 
     const formError = firstValidationError(validation);
     if (formError) {
@@ -141,7 +146,7 @@ export function CreateTokenForm() {
         tonConnectUI.openModal();
       } catch (err) {
         console.error("Failed to open TonConnect modal", err);
-        setError(errorMessage(err));
+        setError("Please connect your wallet first.");
       } finally {
         setDeployStatus(null);
       }
@@ -150,11 +155,9 @@ export function CreateTokenForm() {
 
     setSubmitting(true);
     try {
-      let imageUrl: string | null = data.imageUrl;
-      if (imageFile) {
-        setDeployStatus("Uploading token logo...");
-        const r = await api.upload.image(imageFile);
-        imageUrl = r.url;
+      const imageUrl = data.imageUrl || DEFAULT_TOKEN_IMAGE_URL;
+      if (imageFile && !data.imageUrl) {
+        setMetadataNotice("Logo upload is preview-only on testnet MVP.");
       }
       const payload: CreateTokenPayload = {
         ...data,
@@ -163,7 +166,11 @@ export function CreateTokenForm() {
       };
 
       const launchError = getLaunchValidationError(payload);
-      if (launchError) throw new Error(launchError);
+      if (launchError) {
+        setError(launchError);
+        setDeployStatus(null);
+        return;
+      }
 
       setDeployStatus("Waiting for wallet approval...");
       const transaction = buildLaunchTokenTransaction(payload, wallet);
@@ -178,12 +185,35 @@ export function CreateTokenForm() {
         ],
       });
 
+      const launchId = `recent-${Date.now().toString(36)}`;
+      const createdAt = new Date().toISOString();
+      const factoryAddress = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
+      const token = tokenFromLaunchInput({
+        id: launchId,
+        form: payload,
+        factoryAddress,
+        createdAt,
+      });
+      saveRecentLaunch({
+        id: launchId,
+        name: token.name,
+        symbol: token.symbol,
+        transactionBoc: result.boc,
+        factoryAddress,
+        creator: wallet,
+        createdAt,
+        poolAddress: null,
+        tokenAddress: null,
+        token,
+      });
+
       setTxResult(result.boc);
-      setDeployedId(`tx-${Date.now().toString(36)}`);
+      setExplorerUrl(testnetExplorerUrl({ address: factoryAddress ?? wallet }));
+      setDeployedId(launchId);
       setDeployStatus("Launch transaction submitted.");
     } catch (err) {
       console.error("Launch deployment failed", err);
-      setError(errorMessage(err));
+      setError(normalizeTonConnectError(err));
       setDeployStatus(null);
     } finally {
       setSubmitting(false);
@@ -201,8 +231,11 @@ export function CreateTokenForm() {
         </div>
         <h2 className="mt-5 font-display text-2xl font-bold text-ink-900">Launch submitted!</h2>
         <p className="mt-2 text-sm text-ink-500">
-          Your wallet accepted the factory launch transaction. The token and presale pool will be
-          created on testnet once the transaction confirms.
+          Launch submitted successfully. Your token and presale pool are being created on TON
+          testnet.
+        </p>
+        <p className="mt-2 text-xs text-amber-600">
+          Presale is being indexed. It may appear shortly.
         </p>
         {txResult && (
           <div className="mt-4 rounded-lg bg-ink-50 p-3 text-left">
@@ -214,9 +247,22 @@ export function CreateTokenForm() {
         )}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <button
-            onClick={() => router.push("/tokens")}
-            className="btn-ghost"
+            onClick={() => router.push(`/token/${deployedId}`)}
+            className="btn-primary"
           >
+            View Presale
+          </button>
+          {explorerUrl && (
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="btn-ghost"
+            >
+              View transaction
+            </a>
+          )}
+          <button onClick={() => router.push("/tokens")} className="btn-ghost">
             Browse all tokens
           </button>
         </div>
@@ -254,6 +300,12 @@ export function CreateTokenForm() {
             <div className="mt-5 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-200">
               <AlertCircle size={16} className="mt-0.5 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {metadataNotice && (
+            <div className="mt-5 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-amber-200">
+              {metadataNotice}
             </div>
           )}
 
@@ -1073,4 +1125,8 @@ function validate(d: CreateTokenPayload) {
 function firstValidationError(validation: ReturnType<typeof validate>): string | null {
   const failed = Object.values(validation.bySteps).find((check) => !check.ok);
   return failed?.reason ?? null;
+}
+
+function testnetExplorerUrl({ address }: { address: string }): string {
+  return `https://testnet.tonviewer.com/${encodeURIComponent(address)}`;
 }

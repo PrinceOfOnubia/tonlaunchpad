@@ -5,6 +5,12 @@
 
 import useSWR, { type SWRConfiguration } from "swr";
 import { api } from "./api";
+import {
+  getRecentLaunchToken,
+  normalizeToken,
+  recentLaunchesPage,
+  recentTrendingTokens,
+} from "./recentLaunches";
 import type {
   ChartTimeframe,
   TokenListParams,
@@ -18,18 +24,49 @@ const defaultConfig: SWRConfiguration = {
 
 export function useTokens(params: TokenListParams = {}, config: SWRConfiguration = {}) {
   const key = ["tokens", params] as const;
-  return useSWR(key, ([, p]) => api.tokens.list(p), { ...defaultConfig, ...config });
+  return useSWR(
+    key,
+    async ([, p]) => {
+      try {
+        const page = await api.tokens.list(p);
+        return {
+          ...page,
+          items: page.items.map(normalizeToken),
+        };
+      } catch (err) {
+        console.warn("Token indexer unavailable; using recent launch cache.", err);
+        return recentLaunchesPage(p);
+      }
+    },
+    { ...defaultConfig, ...config },
+  );
 }
 
 export function useTrendingTokens(limit = 6, config: SWRConfiguration = {}) {
-  return useSWR(["trending", limit] as const, ([, l]) => api.tokens.trending(l), {
+  return useSWR(["trending", limit] as const, async ([, l]) => {
+    try {
+      return (await api.tokens.trending(l)).map(normalizeToken);
+    } catch (err) {
+      console.warn("Trending token indexer unavailable; using recent launch cache.", err);
+      return recentTrendingTokens(l);
+    }
+  }, {
     ...defaultConfig,
     ...config,
   });
 }
 
 export function useToken(id: string | null | undefined, config: SWRConfiguration = {}) {
-  return useSWR(id ? (["token", id] as const) : null, ([, i]) => api.tokens.get(i), {
+  return useSWR(id ? (["token", id] as const) : null, async ([, i]) => {
+    try {
+      return normalizeToken(await api.tokens.get(i));
+    } catch (err) {
+      console.warn("Token metadata unavailable; using recent launch cache.", err);
+      const cached = getRecentLaunchToken(i);
+      if (cached) return cached;
+      throw err;
+    }
+  }, {
     ...defaultConfig,
     refreshInterval: 15_000, // live presale numbers
     ...config,
@@ -43,7 +80,14 @@ export function useTokenChart(
 ) {
   return useSWR(
     id ? (["chart", id, timeframe] as const) : null,
-    ([, i, t]) => api.tokens.chart(i!, t),
+    async ([, i, t]) => {
+      try {
+        return await api.tokens.chart(i!, t);
+      } catch (err) {
+        console.warn("Token chart unavailable; showing empty chart.", err);
+        return [];
+      }
+    },
     { ...defaultConfig, ...config },
   );
 }
@@ -55,7 +99,14 @@ export function useTokenTransactions(
 ) {
   return useSWR(
     id ? (["txs", id, limit] as const) : null,
-    ([, i, l]) => api.tokens.transactions(i!, l),
+    async ([, i, l]) => {
+      try {
+        return await api.tokens.transactions(i!, l);
+      } catch (err) {
+        console.warn("Token transactions unavailable; showing empty history.", err);
+        return [];
+      }
+    },
     { ...defaultConfig, refreshInterval: 10_000, ...config },
   );
 }
