@@ -1,9 +1,26 @@
+# env / secrets
 .env
 .env.local
-.next
+.env.*.local
+
+# dependencies
 node_modules
 node_modules/
+
+# next build
+.next
+out
+
+# TON/Tact build
 build/
+
+# TypeScript
 tsconfig.tsbuildinfo
-.DS_Store
+
+# logs
 npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# system
+.DS_Store
