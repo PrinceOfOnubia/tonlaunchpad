@@ -7,7 +7,7 @@ export function Hero() {
       <div className="container-page pt-12 pb-16 sm:pt-20 sm:pb-20 text-center">
         <div className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-ton-100 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-ton-700 shadow-sm backdrop-blur-sm">
           <Sparkles size={12} className="text-ton-500" />
-          Live on TON Testnet
+          Live on TON Mainnet
         </div>
 
         {/* Title */}
