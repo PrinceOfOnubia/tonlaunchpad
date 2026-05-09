@@ -1,6 +1,6 @@
 "use client";
 
-import { AtSign, Globe, Send, Youtube, Github, Music2 } from "lucide-react";
+import { AtSign, Globe, Send, Music2 } from "lucide-react";
 import type { CreateTokenPayload } from "@/lib/types";
 import { cn, formatTon } from "@/lib/utils";
 
@@ -78,9 +78,9 @@ export function TokenPreview({ data, imagePreview, bannerPreview }: Props) {
               {socials.website && <Globe size={14} />}
               {socials.twitter && <AtSign size={14} />}
               {socials.telegram && <Send size={14} />}
-              {socials.youtube && <Youtube size={14} />}
+              {socials.youtube && <Globe size={14} />}
               {socials.tiktok && <Music2 size={14} />}
-              {socials.github && <Github size={14} />}
+              {socials.github && <Globe size={14} />}
             </div>
           )}
         </div>

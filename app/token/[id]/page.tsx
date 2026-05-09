@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, AtSign, ExternalLink, Globe, Loader2, Send, Youtube, Github, Music2 } from "lucide-react";
+import { ArrowLeft, AtSign, ExternalLink, Globe, Loader2, Send, Music2 } from "lucide-react";
 import { useToken } from "@/lib/hooks";
 import { cn, formatCompact, formatPercent, formatPrice, formatTon, shortAddress } from "@/lib/utils";
 import { TokenChart } from "@/components/TokenChart";
@@ -201,7 +201,7 @@ function TokenHeader({ token }: { token: Token }) {
                 rel="noreferrer noopener"
                 className="inline-flex items-center gap-1 text-ink-500 hover:text-ton-600"
               >
-                <Youtube size={13} /> YouTube
+                <Globe size={13} /> YouTube
               </a>
             )}
             {token.social.tiktok && (
@@ -221,7 +221,7 @@ function TokenHeader({ token }: { token: Token }) {
                 rel="noreferrer noopener"
                 className="inline-flex items-center gap-1 text-ink-500 hover:text-ton-600"
               >
-                <Github size={13} /> GitHub
+                <Globe size={13} /> GitHub
               </a>
             )}
           </div>
