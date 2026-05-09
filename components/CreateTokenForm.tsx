@@ -39,13 +39,6 @@ const STEPS: { title: string; subtitle: string }[] = [
   { title: "Review", subtitle: "Confirm & deploy" },
 ];
 
-/**
- * Total supply is fixed by the platform — every launched token gets exactly
- * 1B units. Set here as a single source of truth; the form treats this as
- * read-only.
- */
-const FIXED_TOTAL_SUPPLY = 1_000_000_000;
-
 const initialPayload = (): CreateTokenPayload => {
   const now = new Date();
   const start = new Date(now.getTime() + 60 * 60 * 1000); // +1h
@@ -55,7 +48,7 @@ const initialPayload = (): CreateTokenPayload => {
     symbol: "",
     description: "",
     imageUrl: null,
-    totalSupply: FIXED_TOTAL_SUPPLY,
+    totalSupply: 1_000_000_000,
     decimals: 9,
     allocations: { presale: 50, liquidity: 30, creator: 20 },
     presale: {
@@ -177,48 +170,6 @@ function formatRate(r: number): string {
 function trimZeros(s: string): string {
   if (!s.includes(".")) return s;
   return s.replace(/0+$/, "").replace(/\.$/, "");
-}
-
-// =============================================================================
-// Allocation auto-balancer
-// Whenever one slider changes, the other two are re-distributed so the total
-// always sums to exactly 100. The other two keep their relative ratio when
-// possible; if both were at 0, the remainder is split evenly.
-// =============================================================================
-type AllocKey = "presale" | "liquidity" | "creator";
-
-function rebalanceAllocations(
-  current: { presale: number; liquidity: number; creator: number },
-  changed: AllocKey,
-  newValue: number,
-): { presale: number; liquidity: number; creator: number } {
-  const v = clamp(Math.round(newValue), 0, 100);
-  const remaining = 100 - v;
-  const others: AllocKey[] = (["presale", "liquidity", "creator"] as AllocKey[]).filter(
-    (k) => k !== changed,
-  );
-  const [a, b] = others;
-  const aOld = current[a];
-  const bOld = current[b];
-  const otherSum = aOld + bOld;
-
-  let aNew: number;
-  let bNew: number;
-  if (otherSum <= 0) {
-    // both at zero — split evenly
-    aNew = Math.floor(remaining / 2);
-    bNew = remaining - aNew;
-  } else {
-    aNew = Math.round((aOld / otherSum) * remaining);
-    bNew = remaining - aNew; // guarantees exact 100 total
-  }
-
-  return {
-    ...current,
-    [changed]: v,
-    [a]: aNew,
-    [b]: bNew,
-  } as { presale: number; liquidity: number; creator: number };
 }
 
 // =============================================================================
@@ -726,13 +677,13 @@ function StepIdentity(props: {
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Total supply" hint="Fixed at 1,000,000,000 by the platform">
+        <Field label="Total supply" required>
           <input
-            type="text"
-            value={data.totalSupply.toLocaleString("en-US")}
-            readOnly
-            disabled
-            className="input-base font-mono cursor-not-allowed bg-ink-50 text-ink-500"
+            type="number"
+            value={data.totalSupply}
+            onChange={(e) => update("totalSupply", Number(e.target.value))}
+            min={1}
+            className="input-base font-mono"
           />
         </Field>
         <Field label="Decimals" hint="Standard is 9 for TON jettons">
@@ -807,34 +758,25 @@ function StepAllocation(props: {
   const { data, patch, sum } = props;
   const ok = sum === 100;
   return (
-    <Section
-      title="Token Allocation"
-      subtitle="Sliders auto-balance to 100% — moving one rebalances the others"
-    >
+    <Section title="Token Allocation" subtitle="Must sum to exactly 100%">
       <div className="space-y-5">
         <AllocSlider
           label="Presale"
           color="bg-ton-500"
           value={data.allocations.presale}
-          onChange={(v) =>
-            patch("allocations", rebalanceAllocations(data.allocations, "presale", v))
-          }
+          onChange={(v) => patch("allocations", { presale: v })}
         />
         <AllocSlider
           label="Liquidity"
           color="bg-ton-300"
           value={data.allocations.liquidity}
-          onChange={(v) =>
-            patch("allocations", rebalanceAllocations(data.allocations, "liquidity", v))
-          }
+          onChange={(v) => patch("allocations", { liquidity: v })}
         />
         <AllocSlider
           label="Creator"
           color="bg-ton-700"
           value={data.allocations.creator}
-          onChange={(v) =>
-            patch("allocations", rebalanceAllocations(data.allocations, "creator", v))
-          }
+          onChange={(v) => patch("allocations", { creator: v })}
         />
       </div>
 
