@@ -274,12 +274,15 @@ describe('classic manual-liquidity launchpad flow', () => {
     const f = await fixture();
     const { record } = await launch(f);
 
+    const now = Math.floor(Date.now() / 1000);
     const tx = buildContributeTransaction(record.pool.toString(), 1);
 
     expect(tx.to).toEqual(record.pool.toString());
     expect(tx.to).not.toEqual(f.factory.address.toString());
     expect(tx.amountNano).toEqual(toNano('1').toString());
     expect(tx.payload).toBeTruthy();
+    expect(tx.validUntil).toBeGreaterThan(now);
+    expect(tx.validUntil).toBeLessThanOrEqual(now + 240);
   });
 
   it('owner can update platform treasuries and non-owner cannot', async () => {

@@ -15,6 +15,10 @@ const LAUNCH_VALUE_TON = "1";
 export const DEFAULT_TOKEN_IMAGE_URL = "https://tonlaunchpad.vercel.app/icon.png";
 const DEFAULT_TOKEN_METADATA_URL = "https://tonlaunchpad.vercel.app/default-token-metadata.json";
 
+export function getTonConnectValidUntil() {
+  return Math.floor(Date.now() / 1000) + 240;
+}
+
 export function buildLaunchTokenTransaction(
   form: CreateTokenPayload,
   creatorWallet: string,
@@ -72,7 +76,7 @@ export function buildLaunchTokenTransaction(
     to: factoryAddress.toString(),
     amountNano: toNano(LAUNCH_VALUE_TON).toString(),
     payload: bytesToBase64(body.toBoc()),
-    validUntil: Math.floor(Date.now() / 1000) + 10 * 60,
+    validUntil: getTonConnectValidUntil(),
   };
 }
 
@@ -86,7 +90,7 @@ export function buildContributeTransaction(poolAddress: string, amountTon: numbe
     to: pool.toString(),
     amountNano: toNano(amountTon.toString()).toString(),
     payload: bytesToBase64(body.toBoc()),
-    validUntil: Math.floor(Date.now() / 1000) + 10 * 60,
+    validUntil: getTonConnectValidUntil(),
   };
 }
 
@@ -97,7 +101,7 @@ export function buildCreatorClaimTreasuryTransaction(poolAddress: string): Launc
     to: pool.toString(),
     amountNano: toNano("0.05").toString(),
     payload: bytesToBase64(body.toBoc()),
-    validUntil: Math.floor(Date.now() / 1000) + 10 * 60,
+    validUntil: getTonConnectValidUntil(),
   };
 }
 
@@ -134,9 +138,14 @@ export function normalizeTonConnectError(err: unknown): string {
     text.includes("decline") ||
     text.includes("cancel") ||
     text.includes("user denied") ||
-    text.includes("user rejected")
+    text.includes("user rejected") ||
+    text.includes("aborted")
   ) {
     return "Transaction declined by user.";
+  }
+
+  if (text.includes("wallet") && (text.includes("fail") || text.includes("attempt"))) {
+    return "Wallet connection failed. Please reset connection and try again.";
   }
 
   if (

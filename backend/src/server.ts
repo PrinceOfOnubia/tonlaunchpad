@@ -7,6 +7,7 @@ import { startIndexer } from "./indexer";
 import { prisma } from "./db";
 
 const app = express();
+app.set("trust proxy", true);
 
 app.use(
   cors({

@@ -14,6 +14,7 @@ import {
 import { hardCapRemaining, useEffectivePresale } from "@/lib/presaleStatus";
 import { cn, formatTon, timeUntil } from "@/lib/utils";
 import type { Token } from "@/lib/types";
+import { WalletConnectionActions } from "./WalletConnectionActions";
 
 interface Props {
   token: Token;
@@ -30,6 +31,7 @@ export function PresalePanel({ token }: Props) {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [poolMissingSince, setPoolMissingSince] = useState<number | null>(null);
   const [lastContributeTx, setLastContributeTx] = useState<LaunchTxDebug | null>(null);
+  const [walletOpenHint, setWalletOpenHint] = useState(false);
 
   const { data: myContrib, mutate: refreshContrib } = useMyContribution(
     token.id,
@@ -61,6 +63,15 @@ export function PresalePanel({ token }: Props) {
       setPoolMissingSince(null);
     }
   }, [poolReady, presale.status]);
+
+  useEffect(() => {
+    if (busy !== "contribute") {
+      setWalletOpenHint(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setWalletOpenHint(true), 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [busy]);
 
   async function send(boc: LaunchTxDebug) {
     const tx = {
@@ -112,6 +123,7 @@ export function PresalePanel({ token }: Props) {
       console.debug("[contribute] sendTransaction payload", {
         wallet,
         connected: tonConnectUI.connected,
+        account: tonConnectUI.account,
         walletDevice: tonConnectUI.wallet?.device,
         walletName:
           tonConnectUI.wallet && "name" in tonConnectUI.wallet
@@ -128,6 +140,7 @@ export function PresalePanel({ token }: Props) {
       const result = await send(boc);
       console.debug("[contribute] sendTransaction result", result);
       setTxHash(result.boc);
+      setWalletOpenHint(false);
       api.presale.recordContribution(token.id, {
         wallet,
         amountTon: numAmount,
@@ -259,6 +272,7 @@ export function PresalePanel({ token }: Props) {
           onSubmit={handleContribute}
           endTime={presale.endTime}
           debugTx={lastContributeTx ?? contributionDebugTx(token.presalePoolAddress, numAmount)}
+          tonConnectStatus={tonConnectUI.connected ? "connected" : "disconnected"}
         />
       )}
 
@@ -326,9 +340,19 @@ export function PresalePanel({ token }: Props) {
       )}
 
       {error && (
-        <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-200">
-          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
+        <div className="space-y-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-200">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <WalletConnectionActions compact />
+        </div>
+      )}
+
+      {walletOpenHint && !error && (
+        <div className="space-y-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-amber-200">
+          <div>Open Tonkeeper to confirm the transaction.</div>
+          <WalletConnectionActions compact />
         </div>
       )}
 
@@ -340,9 +364,12 @@ export function PresalePanel({ token }: Props) {
       )}
 
       {!wallet && presale.status !== "finalized" && (
-        <div className="flex items-center gap-2 rounded-lg bg-ton-50 p-3 text-sm text-ton-700 ring-1 ring-ton-100">
-          <Wallet size={16} />
-          Connect your TON wallet to participate
+        <div className="space-y-3 rounded-lg bg-ton-50 p-3 text-sm text-ton-700 ring-1 ring-ton-100">
+          <div className="flex items-center gap-2">
+            <Wallet size={16} />
+            Connect your TON wallet to participate
+          </div>
+          <WalletConnectionActions compact />
         </div>
       )}
     </div>
@@ -367,6 +394,7 @@ function ContributeForm(props: {
   onSubmit: () => void;
   endTime: string;
   debugTx: LaunchTxDebug | null;
+  tonConnectStatus: string;
 }) {
   return (
     <div className="space-y-3">
@@ -449,6 +477,8 @@ function ContributeForm(props: {
           <div>Amount nanotons: {props.debugTx?.amountNano ?? "missing"}</div>
           <div>Wallet connected: {props.wallet ? "yes" : "no"}</div>
           <div>Tx body present: {props.debugTx?.payload ? "yes" : "no"}</div>
+          <div>validUntil: {props.debugTx?.validUntil ?? "missing"}</div>
+          <div>TonConnect status: {props.tonConnectStatus}</div>
         </div>
       )}
     </div>

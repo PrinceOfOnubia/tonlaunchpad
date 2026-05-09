@@ -6,6 +6,7 @@ import { TonConnectButton } from "@tonconnect/ui-react";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { Logo } from "./Logo";
+import { WalletConnectionActions } from "./WalletConnectionActions";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -48,6 +49,9 @@ export function Header() {
           <div className="hidden md:block">
             <TonConnectButton />
           </div>
+          <div className="hidden lg:block">
+            <WalletConnectionActions compact />
+          </div>
           <button
             type="button"
             className="rounded-lg bg-white p-2 ring-1 ring-ink-200 md:hidden"
@@ -80,6 +84,7 @@ export function Header() {
             <div className="mt-2">
               <TonConnectButton />
             </div>
+            <WalletConnectionActions compact />
           </div>
         </div>
       )}

@@ -1,7 +1,8 @@
 "use client";
 
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
-import { useEffect, useState } from "react";
+
+const MANIFEST_URL = "https://tonlaunchpad.vercel.app/tonconnect-manifest.json";
 
 /**
  * Wallet connection provider.
@@ -18,24 +19,8 @@ import { useEffect, useState } from "react";
  *   - Children always render — there is no `return null` path.
  */
 export function TonConnectProvider({ children }: { children: React.ReactNode }) {
-  const [manifestUrl, setManifestUrl] = useState<string>(() => {
-    const envSite = (process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL)?.replace(/\/$/, "");
-    if (envSite) return `${envSite}/tonconnect-manifest.json`;
-    if (typeof window !== "undefined") {
-      return `${window.location.origin}/tonconnect-manifest.json`;
-    }
-    // SSR fallback. Replaced on mount.
-    return "https://tonlaunchpad.vercel.app/tonconnect-manifest.json";
-  });
-
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL) return;
-    const correct = `${window.location.origin}/tonconnect-manifest.json`;
-    if (correct !== manifestUrl) setManifestUrl(correct);
-  }, [manifestUrl]);
-
   return (
-    <TonConnectUIProvider manifestUrl={manifestUrl}>
+    <TonConnectUIProvider manifestUrl={MANIFEST_URL}>
       {children}
     </TonConnectUIProvider>
   );
