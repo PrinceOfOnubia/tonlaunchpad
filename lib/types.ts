@@ -52,6 +52,9 @@ export interface Token {
   /** On-chain TON jetton master address — null until deploy succeeds */
   address: string | null;
   presalePoolAddress?: string | null;
+  tokenMasterAddress?: string | null;
+  factoryAddress?: string | null;
+  txHash?: string | null;
   metadataUrl?: string | null;
   name: string;
   symbol: string;
@@ -76,6 +79,7 @@ export interface Token {
   marketCap: number;
   volume24h: number;
   holders: number;
+  setupState?: "preparing" | "ready";
   platformFees?: {
     tonTreasury?: string | null;
     tokenTreasury?: string | null;

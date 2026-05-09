@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -26,6 +26,7 @@ export function PresalePanel({ token }: Props) {
   const [busy, setBusy] = useState<"contribute" | "claim" | "refund" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [poolMissingSince, setPoolMissingSince] = useState<number | null>(null);
 
   const { data: myContrib, mutate: refreshContrib } = useMyContribution(
     token.id,
@@ -43,6 +44,20 @@ export function PresalePanel({ token }: Props) {
   const aboveMax = max !== undefined && validAmount && numAmount > max;
   const aboveRemaining = validAmount && numAmount > remaining;
   const isCreator = !!wallet && wallet.toLowerCase() === token.creator.toLowerCase();
+  const poolReady = !!token.presalePoolAddress;
+  const setupTakingLong =
+    presale.status === "live" &&
+    !poolReady &&
+    poolMissingSince !== null &&
+    Date.now() - poolMissingSince > 60_000;
+
+  useEffect(() => {
+    if (presale.status === "live" && !poolReady) {
+      setPoolMissingSince((value) => value ?? Date.now());
+    } else {
+      setPoolMissingSince(null);
+    }
+  }, [poolReady, presale.status]);
 
   async function send(boc: { to: string; amountNano: string; payload: string; validUntil: number }) {
     return tonConnectUI.sendTransaction({
@@ -192,7 +207,8 @@ export function PresalePanel({ token }: Props) {
           aboveRemaining={aboveRemaining}
           remaining={remaining}
           wallet={wallet || null}
-          poolReady={!!token.presalePoolAddress}
+          poolReady={poolReady}
+          setupTakingLong={setupTakingLong}
           busy={busy === "contribute"}
           onSubmit={handleContribute}
           endTime={presale.endTime}
@@ -299,6 +315,7 @@ function ContributeForm(props: {
   remaining: number;
   wallet: string | null;
   poolReady: boolean;
+  setupTakingLong: boolean;
   busy: boolean;
   onSubmit: () => void;
   endTime: string;
@@ -368,7 +385,9 @@ function ContributeForm(props: {
 
       {!props.poolReady && (
         <div className="rounded-lg bg-ton-50 px-3 py-2 text-center text-xs font-medium text-ton-700 ring-1 ring-ton-100">
-          Finalizing presale setup...
+          {props.setupTakingLong
+            ? "Setup is taking longer than expected. Refresh or check transaction."
+            : "Finalizing presale setup..."}
         </div>
       )}
 

@@ -71,8 +71,12 @@ function TokenContent({ token }: { token: Token }) {
 
       <TokenHeader token={effectiveToken} />
       {process.env.NODE_ENV !== "production" && (
-        <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 font-mono text-xs text-ink-500 ring-1 ring-ink-100">
-          Pool: {effectiveToken.presalePoolAddress || "missing"}
+        <div className="mt-3 grid gap-1 rounded-lg bg-ink-50 px-3 py-2 font-mono text-xs text-ink-500 ring-1 ring-ink-100">
+          <div>Factory: {effectiveToken.factoryAddress || effectiveToken.address || "missing"}</div>
+          <div>Launch ID: {effectiveToken.id}</div>
+          <div>Pool: {effectiveToken.presalePoolAddress || "missing"}</div>
+          <div>Token Master: {effectiveToken.tokenMasterAddress || effectiveToken.address || "missing"}</div>
+          <div>Backend record updated: {effectiveToken.presalePoolAddress ? "yes" : "no"}</div>
         </div>
       )}
 

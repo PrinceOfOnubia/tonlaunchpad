@@ -53,10 +53,9 @@ class TonpadIndexer {
     for (let i = 0; i < launchCount; i += 1) {
       try {
         const result = await this.client.runMethod(factory, "getLaunch", [{ type: "int", value: BigInt(i) }]);
-        const tuple = result.stack.readTuple();
-        const tokenMasterAddress = tuple.readAddress().toString();
-        const presalePoolAddress = tuple.readAddress().toString();
-        const creatorWallet = tuple.readAddress().toString();
+        const tokenMasterAddress = result.stack.readAddress().toString();
+        const presalePoolAddress = result.stack.readAddress().toString();
+        const creatorWallet = result.stack.readAddress().toString();
         const poolVariants = addressVariants(presalePoolAddress);
         const tokenVariants = addressVariants(tokenMasterAddress);
         const creatorVariants = addressVariants(creatorWallet);
@@ -75,6 +74,14 @@ class TonpadIndexer {
           (await prisma.launch.findFirst({
             where: {
               creatorWallet: { in: creatorVariants },
+              presalePoolAddress: null,
+            },
+            orderBy: { createdAt: "desc" },
+          })) ??
+          (await prisma.launch.findFirst({
+            where: {
+              factoryAddress: config.factoryAddress,
+              pendingIndexing: true,
               presalePoolAddress: null,
             },
             orderBy: { createdAt: "desc" },

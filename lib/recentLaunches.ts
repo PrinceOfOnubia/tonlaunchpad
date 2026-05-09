@@ -126,6 +126,9 @@ export function tokenFromLaunchInput(args: {
     id: args.id,
     address: args.factoryAddress ?? null,
     presalePoolAddress: null,
+    tokenMasterAddress: null,
+    factoryAddress: args.factoryAddress ?? null,
+    txHash: null,
     metadataUrl: args.form.metadataUrl ?? null,
     name: args.form.name,
     symbol: args.form.symbol,
@@ -163,6 +166,9 @@ export function normalizeToken(input: unknown): Token {
     id: stringValue(source.id, `token-${Date.now()}`),
     address: nullableString(source.address),
     presalePoolAddress: nullableString(source.presalePoolAddress),
+    tokenMasterAddress: nullableString(source.tokenMasterAddress),
+    factoryAddress: nullableString(source.factoryAddress),
+    txHash: nullableString(source.txHash),
     metadataUrl: nullableString(source.metadataUrl),
     name: stringValue(source.name, "Untitled Token"),
     symbol: stringValue(source.symbol, "TKN").toUpperCase(),
@@ -200,6 +206,7 @@ export function normalizeToken(input: unknown): Token {
     marketCap: numberValue(source.marketCap, 0),
     volume24h: numberValue(source.volume24h, 0),
     holders: numberValue(source.holders, 0),
+    setupState: source.setupState === "ready" ? "ready" : source.setupState === "preparing" ? "preparing" : undefined,
   };
 }
 

@@ -6,6 +6,7 @@ import { LaunchpadFactory, LaunchToken } from '../build/Launchpad/Launchpad_Laun
 import { LaunchpadJettonMaster } from '../build/Launchpad/Launchpad_LaunchpadJettonMaster';
 import { JettonWallet } from '../build/Launchpad/Launchpad_JettonWallet';
 import { PresalePool } from '../build/Launchpad/Launchpad_PresalePool';
+import { buildContributeTransaction } from '../lib/tonLaunchpad';
 
 const DAY = 24 * 60 * 60;
 const TOTAL_SUPPLY = 1_000_000_000_000_000_000n;
@@ -130,6 +131,8 @@ describe('classic manual-liquidity launchpad flow', () => {
 
     expect(await f.factory.getGetLaunchCount()).toEqual(1n);
     expect(record.creator).toEqualAddress(f.creator.address);
+    expect(record.pool.toString()).toBeTruthy();
+    expect(record.token.toString()).toBeTruthy();
   });
 
   it('token allocations include 1% platform token fee and creator-managed liquidity', async () => {
@@ -265,6 +268,18 @@ describe('classic manual-liquidity launchpad flow', () => {
     const abi = readFileSync('build/Launchpad/Launchpad_PresalePool.abi', 'utf8');
     expect(abi).not.toContain('MigrateLiquidity');
     expect(abi).not.toContain('ExecuteBuyback');
+  });
+
+  it('frontend contribution transaction targets the presale pool, not the factory', async () => {
+    const f = await fixture();
+    const { record } = await launch(f);
+
+    const tx = buildContributeTransaction(record.pool.toString(), 1);
+
+    expect(tx.to).toEqual(record.pool.toString());
+    expect(tx.to).not.toEqual(f.factory.address.toString());
+    expect(tx.amountNano).toEqual(toNano('1').toString());
+    expect(tx.payload).toBeTruthy();
   });
 
   it('owner can update platform treasuries and non-owner cannot', async () => {

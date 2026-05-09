@@ -72,7 +72,7 @@ export function useToken(id: string | null | undefined, config: SWRConfiguration
     }
   }, {
     ...defaultConfig,
-    refreshInterval: 5_000,
+    refreshInterval: 3_000,
     ...config,
   });
 }
