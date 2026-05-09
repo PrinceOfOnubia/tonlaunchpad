@@ -1,18 +1,23 @@
 "use client";
 
-import { AtSign, Globe, Send } from "lucide-react";
+import { AtSign, Globe, Send, Youtube, Github, Music2 } from "lucide-react";
 import type { CreateTokenPayload } from "@/lib/types";
 import { cn, formatTon } from "@/lib/utils";
 
 interface Props {
   data: CreateTokenPayload;
   imagePreview: string | null;
+  bannerPreview?: string | null;
 }
 
-export function TokenPreview({ data, imagePreview }: Props) {
+export function TokenPreview({ data, imagePreview, bannerPreview }: Props) {
   const symbol = data.symbol || "TKN";
   const name = data.name || "Your Token";
   const initials = symbol.slice(0, 2).toUpperCase();
+
+  const socials = data.social;
+  const hasSocial =
+    !!(socials.website || socials.twitter || socials.telegram || socials.youtube || socials.tiktok || socials.github);
 
   return (
     <div className="sticky top-24 space-y-4">
@@ -20,52 +25,65 @@ export function TokenPreview({ data, imagePreview }: Props) {
         Live Preview
       </div>
 
-      <div className="glass overflow-hidden p-5">
-        <div className="flex items-start gap-3">
-          {imagePreview ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={imagePreview}
-              alt="preview"
-              className="h-14 w-14 rounded-full object-cover ring-2 ring-white"
-            />
-          ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-ton-gradient font-display text-base font-bold text-white ring-2 ring-white">
-              {initials}
+      <div className="glass overflow-hidden">
+        {/* Banner strip — uploaded preview or subtle gradient fallback */}
+        {bannerPreview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={bannerPreview} alt="" className="h-24 w-full object-cover" />
+        ) : (
+          <div className="h-24 w-full bg-gradient-to-br from-ton-100 via-ton-50 to-white" />
+        )}
+
+        <div className="p-5">
+          <div className="flex items-start gap-3">
+            {imagePreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imagePreview}
+                alt="preview"
+                className="h-14 w-14 rounded-full object-cover ring-2 ring-white"
+              />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-ton-gradient font-display text-base font-bold text-white ring-2 ring-white">
+                {initials}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate font-display text-lg font-semibold text-ink-900">{name}</h3>
+              <span className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-ink-600">
+                {symbol}
+              </span>
             </div>
+          </div>
+
+          {data.description && (
+            <p className="mt-3 line-clamp-3 text-xs text-ink-600">{data.description}</p>
           )}
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate font-display text-lg font-semibold text-ink-900">{name}</h3>
-            <span className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-ink-600">
-              {symbol}
+
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-ton-50 px-2 py-0.5 text-[11px] font-medium text-ton-700 ring-1 ring-inset ring-ton-200">
+              Manual liquidity after presale
             </span>
           </div>
-        </div>
 
-        {data.description && (
-          <p className="mt-3 line-clamp-3 text-xs text-ink-600">{data.description}</p>
-        )}
-
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-full bg-ton-50 px-2 py-0.5 text-[11px] font-medium text-ton-700 ring-1 ring-inset ring-ton-200">
-            Manual liquidity after presale
-          </span>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-ink-100 pt-3 text-xs">
-          <Stat label="Soft cap" value={formatTon(data.presale.softCap || 0)} />
-          <Stat label="Hard cap" value={formatTon(data.presale.hardCap || 0)} />
-          <Stat label="Rate" value={`${data.presale.rate || 0} / TON`} />
-          <Stat label="Liquidity" value={`${data.liquidityPercent}%`} />
-        </div>
-
-        {(data.social.website || data.social.twitter || data.social.telegram) && (
-          <div className="mt-3 flex gap-2 border-t border-ink-100 pt-3 text-ink-400">
-            {data.social.website && <Globe size={14} />}
-            {data.social.twitter && <AtSign size={14} />}
-            {data.social.telegram && <Send size={14} />}
+          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-ink-100 pt-3 text-xs">
+            <Stat label="Soft cap" value={formatTon(data.presale.softCap || 0)} />
+            <Stat label="Hard cap" value={formatTon(data.presale.hardCap || 0)} />
+            <Stat label="Rate" value={`${data.presale.rate || 0} / TON`} />
+            <Stat label="Liquidity" value={`${data.liquidityPercent}%`} />
           </div>
-        )}
+
+          {hasSocial && (
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-ink-100 pt-3 text-ink-400">
+              {socials.website && <Globe size={14} />}
+              {socials.twitter && <AtSign size={14} />}
+              {socials.telegram && <Send size={14} />}
+              {socials.youtube && <Youtube size={14} />}
+              {socials.tiktok && <Music2 size={14} />}
+              {socials.github && <Github size={14} />}
+            </div>
+          )}
+        </div>
       </div>
 
       <AllocationDonut data={data.allocations} />
