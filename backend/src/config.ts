@@ -5,11 +5,9 @@ export const config = {
   toncenterEndpoint:
     process.env.TONCENTER_ENDPOINT ?? "https://testnet.toncenter.com/api/v2/jsonRPC",
   toncenterApiKey: process.env.TONCENTER_API_KEY ?? "",
-  factoryAddress:
-    process.env.FACTORY_ADDRESS ?? "EQARP90pfupm_ob9jlKzxqiq0eM1iGAHJep40a3cvxzy8YrL",
+  factoryAddress: process.env.FACTORY_ADDRESS ?? "",
   platformTonTreasury: process.env.PLATFORM_TON_TREASURY ?? "",
-  platformTokenTreasury:
-    process.env.PLATFORM_TOKEN_TREASURY ?? "0QCOdg8PwR3o9bdyU7yo1n9jO-zcz6HKJ_uVzxsfjMejhjY0",
+  platformTokenTreasury: process.env.PLATFORM_TOKEN_TREASURY ?? "",
   platformTonFeeBps: Number(process.env.PLATFORM_TON_FEE_BPS ?? 500),
   platformTokenFeeBps: Number(process.env.PLATFORM_TOKEN_FEE_BPS ?? 100),
   network: process.env.NETWORK ?? "testnet",

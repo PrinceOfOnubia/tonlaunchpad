@@ -42,7 +42,9 @@ Required backend env:
 DATABASE_URL=
 TONCENTER_ENDPOINT=https://testnet.toncenter.com/api/v2/jsonRPC
 TONCENTER_API_KEY=
-FACTORY_ADDRESS=EQARP90pfupm_ob9jlKzxqiq0eM1iGAHJep40a3cvxzy8YrL
+FACTORY_ADDRESS=
+PLATFORM_TON_TREASURY=
+PLATFORM_TOKEN_TREASURY=
 NETWORK=testnet
 PORT=4000
 FRONTEND_ORIGIN=https://tonlaunchpad.vercel.app
@@ -103,6 +105,8 @@ npm test
 ```bash
 npm install
 npm run contract:build
+export PLATFORM_TON_TREASURY=<platform-ton-treasury>
+export PLATFORM_TOKEN_TREASURY=<platform-token-treasury>
 npx blueprint run deployLaunchpad --testnet
 ```
 
