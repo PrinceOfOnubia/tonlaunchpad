@@ -1121,8 +1121,13 @@ function StepReview({
           )}
         </ReviewSection>
 
+        <ReviewSection title="Platform fees">
+          <ReviewRow label="On raised TON" value="5% of total raise" />
+          <ReviewRow label="On token supply" value="1% of total supply" />
+        </ReviewSection>
+
         <div className="rounded-xl bg-ton-50 p-4 text-sm font-semibold text-ton-700 ring-1 ring-ton-200">
-          Platform fee: 5% of raised TON.
+          Platform fee: 5% of raised TON + 1% of total token supply.
         </div>
       </div>
     </Section>
