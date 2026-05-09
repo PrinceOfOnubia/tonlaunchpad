@@ -35,7 +35,7 @@ type Step = 0 | 1 | 2 | 3;
 const STEPS: { title: string; subtitle: string }[] = [
   { title: "Token", subtitle: "Identity & branding" },
   { title: "Allocation", subtitle: "Token distribution" },
-  { title: "Presale", subtitle: "Cap, rate, schedule" },
+  { title: "Presale", subtitle: "Caps, schedule, pricing" },
   { title: "Review", subtitle: "Confirm & deploy" },
 ];
 
@@ -66,6 +66,188 @@ const initialPayload = (): CreateTokenPayload => {
   };
 };
 
+// =============================================================================
+// Pricing engine (auto-derived — never user-typed)
+// =============================================================================
+interface PricingBreakdown {
+  /** Tokens issued per 1 TON contributed in presale */
+  rate: number;
+  /** Total tokens that will be sold during presale */
+  presaleTokens: number;
+  /** TON paid per 1 token in presale */
+  presalePriceTon: number;
+  /** TON from raise that ends up in the DEX pool */
+  liquidityTon: number;
+  /** Tokens from supply that end up in the DEX pool */
+  listingTokens: number;
+  /** TON per 1 token at listing (initial DEX price) */
+  listingPriceTon: number;
+  /** Fully-diluted valuation in TON at listing */
+  marketCapTon: number;
+  /** Discount presale buyers receive vs listing price (%) */
+  discountPct: number;
+  /** Set when presale price > listing price (anti-pattern) */
+  warning: string | null;
+  /** Whether all required inputs are present and the math is computable */
+  ok: boolean;
+}
+
+function computePricing(d: CreateTokenPayload): PricingBreakdown {
+  const presaleTokens = d.totalSupply * (d.allocations.presale / 100);
+  const liquidityTon = d.presale.hardCap * (d.liquidityPercent / 100);
+  const listingTokens = d.totalSupply * (d.allocations.liquidity / 100);
+
+  const ok =
+    d.totalSupply > 0 &&
+    presaleTokens > 0 &&
+    d.presale.hardCap > 0 &&
+    listingTokens > 0;
+
+  if (!ok) {
+    return {
+      rate: 0,
+      presaleTokens,
+      presalePriceTon: 0,
+      liquidityTon,
+      listingTokens,
+      listingPriceTon: 0,
+      marketCapTon: 0,
+      discountPct: 0,
+      warning: null,
+      ok: false,
+    };
+  }
+
+  const rate = presaleTokens / d.presale.hardCap;
+  const presalePriceTon = d.presale.hardCap / presaleTokens;
+  const listingPriceTon = liquidityTon / listingTokens;
+  const marketCapTon = listingPriceTon * d.totalSupply;
+  const discountPct =
+    listingPriceTon > 0
+      ? ((listingPriceTon - presalePriceTon) / listingPriceTon) * 100
+      : 0;
+
+  let warning: string | null = null;
+  if (presalePriceTon > listingPriceTon && listingPriceTon > 0) {
+    const diff = ((presalePriceTon - listingPriceTon) / listingPriceTon) * 100;
+    warning = `Presale price is ${diff.toFixed(1)}% above listing price — buyers would be underwater at launch.`;
+  }
+
+  return {
+    rate,
+    presaleTokens,
+    presalePriceTon,
+    liquidityTon,
+    listingTokens,
+    listingPriceTon,
+    marketCapTon,
+    discountPct,
+    warning,
+    ok: true,
+  };
+}
+
+function formatPriceTon(p: number): string {
+  if (!Number.isFinite(p) || p <= 0) return "—";
+  if (p < 0.000001) return `${p.toExponential(2)} TON`;
+  if (p < 0.01) return `${trimZeros(p.toFixed(8))} TON`;
+  if (p < 1) return `${trimZeros(p.toFixed(6))} TON`;
+  return `${trimZeros(p.toFixed(4))} TON`;
+}
+
+function formatRate(r: number): string {
+  if (!Number.isFinite(r) || r <= 0) return "—";
+  if (r >= 1000) {
+    return new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: 2,
+    }).format(r);
+  }
+  if (r >= 1) return trimZeros(r.toFixed(2));
+  return trimZeros(r.toFixed(6));
+}
+
+function trimZeros(s: string): string {
+  if (!s.includes(".")) return s;
+  return s.replace(/0+$/, "").replace(/\.$/, "");
+}
+
+// =============================================================================
+// PricingBreakdown — visible calculator panel rendered inside Step 3
+// =============================================================================
+function PricingBreakdown({
+  pricing,
+  symbol,
+}: {
+  pricing: PricingBreakdown;
+  symbol: string;
+}) {
+  const sym = symbol.trim() || "TKN";
+  return (
+    <div className="rounded-xl border border-ton-100 bg-ton-50/40 p-5">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-ton-700">
+            Pricing breakdown
+          </div>
+          <div className="text-[11px] text-ink-500">
+            Calculated automatically from total supply, allocation, hard cap, and
+            liquidity %.
+          </div>
+        </div>
+        {pricing.ok && !pricing.warning && pricing.discountPct > 0 && (
+          <div className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+            Presale −{pricing.discountPct.toFixed(1)}% vs listing
+          </div>
+        )}
+      </div>
+
+      {!pricing.ok ? (
+        <div className="text-sm text-ink-500">
+          Fill in total supply, allocation, hard cap, and liquidity % to see
+          pricing.
+        </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <PricingRow
+            label="Presale price"
+            value={`${formatPriceTon(pricing.presalePriceTon)} / ${sym}`}
+          />
+          <PricingRow
+            label="Listing price"
+            value={`${formatPriceTon(pricing.listingPriceTon)} / ${sym}`}
+          />
+          <PricingRow
+            label="Tokens per 1 TON"
+            value={formatRate(pricing.rate)}
+          />
+          <PricingRow
+            label="FDV at listing"
+            value={formatTon(pricing.marketCapTon)}
+          />
+        </div>
+      )}
+
+      {pricing.warning && (
+        <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs font-medium text-red-700 ring-1 ring-red-200">
+          ⚠ {pricing.warning}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PricingRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-ink-100">
+      <span className="text-xs text-ink-500">{label}</span>
+      <span className="font-mono text-sm font-semibold text-ink-900">
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export function CreateTokenForm() {
   const wallet = useTonAddress();
   const [tonConnectUI] = useTonConnectUI();
@@ -86,6 +268,7 @@ export function CreateTokenForm() {
   // Validation per step
   // ---------------------------------------------------------------------
   const validation = useMemo(() => validate(data), [data]);
+  const pricing = useMemo(() => computePricing(data), [data]);
   const allocSum =
     data.allocations.presale + data.allocations.liquidity + data.allocations.creator;
 
@@ -168,6 +351,7 @@ export function CreateTokenForm() {
       }
       const payload: CreateTokenPayload = {
         ...data,
+        presale: { ...data.presale, rate: pricing.rate },
         imageUrl,
         metadataUrl,
         creator: wallet,
@@ -323,8 +507,8 @@ export function CreateTokenForm() {
             />
           )}
           {step === 1 && <StepAllocation data={data} patch={patch} sum={allocSum} />}
-          {step === 2 && <StepPresale data={data} update={update} patch={patch} />}
-          {step === 3 && <StepReview data={data} imagePreview={imagePreview} />}
+          {step === 2 && <StepPresale data={data} update={update} patch={patch} pricing={pricing} />}
+          {step === 3 && <StepReview data={data} imagePreview={imagePreview} pricing={pricing} />}
 
           {error && (
             <div className="mt-5 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-200">
@@ -650,36 +834,13 @@ function StepPresale(props: {
   data: CreateTokenPayload;
   update: <K extends keyof CreateTokenPayload>(k: K, v: CreateTokenPayload[K]) => void;
   patch: <K extends keyof CreateTokenPayload>(k: K, p: Partial<CreateTokenPayload[K]>) => void;
+  pricing: PricingBreakdown;
 }) {
-  const { data, update, patch } = props;
+  const { data, update, patch, pricing } = props;
   return (
     <Section title="Presale Settings" subtitle="When and how people contribute">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Rate (tokens per 1 TON)" required>
-          <input
-            type="number"
-            min={1}
-            value={data.presale.rate}
-            onChange={(e) => patch("presale", { rate: Number(e.target.value) })}
-            className="input-base font-mono"
-          />
-        </Field>
-        <Field label="Manual liquidity %" required hint="Informational only for creator planning">
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={data.liquidityPercent}
-            onChange={(e) =>
-              update("liquidityPercent", clamp(Number(e.target.value), 0, 100))
-            }
-            className="input-base font-mono"
-          />
-        </Field>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Soft cap (TON)" required>
+        <Field label="Soft cap (TON)" required hint="Min raise for presale to succeed">
           <input
             type="number"
             min={0}
@@ -688,7 +849,7 @@ function StepPresale(props: {
             className="input-base font-mono"
           />
         </Field>
-        <Field label="Hard cap (TON)" required hint="Must be ≥ soft cap">
+        <Field label="Hard cap (TON)" required hint="Max TON raise; must be ≥ soft cap">
           <input
             type="number"
             min={0}
@@ -700,6 +861,18 @@ function StepPresale(props: {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Liquidity %" required hint="% of raised TON locked into DEX">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={data.liquidityPercent}
+            onChange={(e) =>
+              update("liquidityPercent", clamp(Number(e.target.value), 0, 100))
+            }
+            className="input-base font-mono"
+          />
+        </Field>
         <Field label="Min contribution (TON)">
           <input
             type="number"
@@ -713,6 +886,9 @@ function StepPresale(props: {
             className="input-base font-mono"
           />
         </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Max contribution (TON)">
           <input
             type="number"
@@ -726,9 +902,6 @@ function StepPresale(props: {
             className="input-base font-mono"
           />
         </Field>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Start time" required>
           <input
             type="datetime-local"
@@ -737,6 +910,9 @@ function StepPresale(props: {
             className="input-base"
           />
         </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="End time" required>
           <input
             type="datetime-local"
@@ -745,7 +921,10 @@ function StepPresale(props: {
             className="input-base"
           />
         </Field>
+        <div />
       </div>
+
+      <PricingBreakdown pricing={pricing} symbol={data.symbol} />
     </Section>
   );
 }
@@ -756,9 +935,11 @@ function StepPresale(props: {
 function StepReview({
   data,
   imagePreview,
+  pricing,
 }: {
   data: CreateTokenPayload;
   imagePreview: string | null;
+  pricing: PricingBreakdown;
 }) {
   return (
     <Section title="Review & Deploy" subtitle="Double-check everything before launching">
@@ -784,15 +965,45 @@ function StepReview({
         </ReviewSection>
 
         <ReviewSection title="Presale">
-          <ReviewRow label="Rate" value={`${data.presale.rate.toLocaleString()} per TON`} />
           <ReviewRow label="Soft cap" value={formatTon(data.presale.softCap)} />
           <ReviewRow label="Hard cap" value={formatTon(data.presale.hardCap)} />
-          <ReviewRow label="Manual liquidity plan" value={`${data.liquidityPercent}% of raise`} />
+          <ReviewRow label="Liquidity %" value={`${data.liquidityPercent}% of raise`} />
           <ReviewRow
             label="Schedule"
             value={`${new Date(data.presale.startTime).toLocaleString()} → ${new Date(data.presale.endTime).toLocaleString()}`}
           />
         </ReviewSection>
+
+        <ReviewSection title="Pricing (auto-calculated)">
+          <ReviewRow
+            label="Tokens per 1 TON"
+            value={pricing.ok ? formatRate(pricing.rate) : "—"}
+          />
+          <ReviewRow
+            label="Presale price"
+            value={pricing.ok ? `${formatPriceTon(pricing.presalePriceTon)} / ${data.symbol || "TKN"}` : "—"}
+          />
+          <ReviewRow
+            label="Listing price"
+            value={pricing.ok ? `${formatPriceTon(pricing.listingPriceTon)} / ${data.symbol || "TKN"}` : "—"}
+          />
+          <ReviewRow
+            label="FDV at listing"
+            value={pricing.ok ? formatTon(pricing.marketCapTon) : "—"}
+          />
+          {pricing.ok && pricing.discountPct > 0 && !pricing.warning && (
+            <ReviewRow
+              label="Presale discount"
+              value={`−${pricing.discountPct.toFixed(1)}% vs listing`}
+            />
+          )}
+        </ReviewSection>
+
+        {pricing.warning && (
+          <div className="rounded-xl bg-red-50 p-3 text-xs font-medium text-red-700 ring-1 ring-red-200">
+            ⚠ {pricing.warning}
+          </div>
+        )}
 
         <ReviewSection title="Platform fees">
           <ReviewRow label="TON fee" value="5% of raised TON" />
@@ -901,7 +1112,12 @@ function validate(d: CreateTokenPayload) {
   if (sum !== 100) bySteps[1] = { ok: false, reason: `Allocations must sum to 100% (currently ${sum}%)` };
 
   // Step 2
-  if (d.presale.rate < 1) bySteps[2] = { ok: false, reason: "Rate must be ≥ 1" };
+  const pricing = computePricing(d);
+  if (!pricing.ok)
+    bySteps[2] = {
+      ok: false,
+      reason: "Set total supply, presale allocation, hard cap, and liquidity allocation",
+    };
   else if (d.presale.softCap <= 0) bySteps[2] = { ok: false, reason: "Soft cap must be > 0" };
   else if (d.presale.hardCap < d.presale.softCap)
     bySteps[2] = { ok: false, reason: "Hard cap must be ≥ soft cap" };
@@ -909,6 +1125,8 @@ function validate(d: CreateTokenPayload) {
     bySteps[2] = { ok: false, reason: "End time must be after start time" };
   else if (d.liquidityPercent < 0 || d.liquidityPercent > 100)
     bySteps[2] = { ok: false, reason: "Liquidity % must be 0-100" };
+  else if (pricing.warning)
+    bySteps[2] = { ok: false, reason: pricing.warning };
 
   const allValid = Object.values(bySteps).every((c) => c.ok);
   return { bySteps, allValid };
