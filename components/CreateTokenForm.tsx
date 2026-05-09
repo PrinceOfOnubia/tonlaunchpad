@@ -257,6 +257,8 @@ export function CreateTokenForm() {
   const [data, setData] = useState<CreateTokenPayload>(initialPayload);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deployStatus, setDeployStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -292,6 +294,17 @@ export function CreateTokenForm() {
     setMetadataNotice("Logo will be uploaded and included in hosted token metadata.");
   }
 
+  function handleBanner(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) {
+      setError("Banner must be ≤ 8MB");
+      return;
+    }
+    setBannerFile(f);
+    setBannerPreview(URL.createObjectURL(f));
+  }
+
   // ---------------------------------------------------------------------
   // Deploy
   // ---------------------------------------------------------------------
@@ -322,6 +335,7 @@ export function CreateTokenForm() {
     setSubmitting(true);
     try {
       let imageUrl = data.imageUrl || DEFAULT_TOKEN_IMAGE_URL;
+      let bannerUrl: string | null = data.bannerUrl ?? null;
       let metadataUrl: string | null = null;
       if (imageFile && !data.imageUrl) {
         setDeployStatus("Uploading token logo...");
@@ -333,6 +347,16 @@ export function CreateTokenForm() {
           console.warn("Logo upload failed; using default token image.", err);
           setMetadataNotice("Logo upload failed. Using the default token image for this launch.");
           imageUrl = DEFAULT_TOKEN_IMAGE_URL;
+        }
+      }
+      if (bannerFile && !data.bannerUrl) {
+        setDeployStatus("Uploading banner...");
+        try {
+          const uploaded = await api.upload.image(bannerFile);
+          bannerUrl = uploaded.url;
+        } catch (err) {
+          console.warn("Banner upload failed; banner will be omitted.", err);
+          bannerUrl = null;
         }
       }
       setDeployStatus("Publishing token metadata...");
@@ -353,6 +377,7 @@ export function CreateTokenForm() {
         ...data,
         presale: { ...data.presale, rate: pricing.rate },
         imageUrl,
+        bannerUrl,
         metadataUrl,
         creator: wallet,
       };
@@ -504,6 +529,8 @@ export function CreateTokenForm() {
               patch={patch}
               imagePreview={imagePreview}
               onImage={handleImage}
+              bannerPreview={bannerPreview}
+              onBanner={handleBanner}
             />
           )}
           {step === 1 && <StepAllocation data={data} patch={patch} sum={allocSum} />}
@@ -582,7 +609,7 @@ export function CreateTokenForm() {
       </div>
 
       <div className="hidden lg:block">
-        <TokenPreview data={data} imagePreview={imagePreview} />
+        <TokenPreview data={data} imagePreview={imagePreview} bannerPreview={bannerPreview} />
       </div>
     </div>
   );
@@ -637,8 +664,10 @@ function StepIdentity(props: {
   patch: <K extends keyof CreateTokenPayload>(k: K, p: Partial<CreateTokenPayload[K]>) => void;
   imagePreview: string | null;
   onImage: (e: ChangeEvent<HTMLInputElement>) => void;
+  bannerPreview: string | null;
+  onBanner: (e: ChangeEvent<HTMLInputElement>) => void;
 }) {
-  const { data, update, patch, imagePreview, onImage } = props;
+  const { data, update, patch, imagePreview, onImage, bannerPreview, onBanner } = props;
   return (
     <Section title="Token Identity" subtitle="What is your project called?">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -715,6 +744,29 @@ function StepIdentity(props: {
         </label>
       </Field>
 
+      <Field label="Banner image" hint="Wide cover (≈3:1). ≤8MB. Shown on token cards & detail header.">
+        <label className="block cursor-pointer overflow-hidden rounded-xl border-2 border-dashed border-ink-200 bg-white transition-colors hover:border-ton-400">
+          {bannerPreview ? (
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={bannerPreview} alt="" className="h-32 w-full object-cover" />
+              <div className="pointer-events-none absolute inset-0 flex items-end justify-end bg-gradient-to-t from-black/40 to-transparent p-2">
+                <span className="rounded-md bg-white/90 px-2 py-1 text-[11px] font-semibold text-ink-700">
+                  Change banner
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-32 w-full flex-col items-center justify-center gap-1 text-ink-400">
+              <ImageIcon size={22} />
+              <span className="text-sm font-medium text-ink-600">Click to upload banner</span>
+              <span className="text-[11px] text-ink-400">Optional · 1500×500 recommended</span>
+            </div>
+          )}
+          <input type="file" accept="image/*" onChange={onBanner} className="hidden" />
+        </label>
+      </Field>
+
       <Section title="Social links" subtitle="Optional — helps users find you" compact>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Website">
@@ -738,6 +790,30 @@ function StepIdentity(props: {
               value={data.social.telegram ?? ""}
               onChange={(e) => patch("social", { telegram: e.target.value || undefined })}
               placeholder="t.me/group"
+              className="input-base"
+            />
+          </Field>
+          <Field label="YouTube">
+            <input
+              value={data.social.youtube ?? ""}
+              onChange={(e) => patch("social", { youtube: e.target.value || undefined })}
+              placeholder="youtube.com/@channel"
+              className="input-base"
+            />
+          </Field>
+          <Field label="TikTok">
+            <input
+              value={data.social.tiktok ?? ""}
+              onChange={(e) => patch("social", { tiktok: e.target.value || undefined })}
+              placeholder="tiktok.com/@handle"
+              className="input-base"
+            />
+          </Field>
+          <Field label="GitHub">
+            <input
+              value={data.social.github ?? ""}
+              onChange={(e) => patch("social", { github: e.target.value || undefined })}
+              placeholder="github.com/org"
               className="input-base"
             />
           </Field>
