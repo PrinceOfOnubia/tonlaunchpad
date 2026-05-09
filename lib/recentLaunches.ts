@@ -110,6 +110,7 @@ export function tokenFromLaunchInput(args: {
     symbol: string;
     description: string;
     imageUrl: string | null;
+    bannerUrl?: string | null;
     metadataUrl?: string | null;
     totalSupply: number;
     decimals: number;
@@ -134,6 +135,7 @@ export function tokenFromLaunchInput(args: {
     symbol: args.form.symbol,
     description: args.form.description,
     imageUrl: args.form.imageUrl || DEFAULT_TOKEN_IMAGE_URL,
+    bannerUrl: args.form.bannerUrl ?? null,
     totalSupply: args.form.totalSupply,
     decimals: args.form.decimals,
     allocations: args.form.allocations,
@@ -174,6 +176,7 @@ export function normalizeToken(input: unknown): Token {
     symbol: stringValue(source.symbol, "TKN").toUpperCase(),
     description: stringValue(source.description, ""),
     imageUrl: nullableString(source.imageUrl) ?? DEFAULT_TOKEN_IMAGE_URL,
+    bannerUrl: nullableString(source.bannerUrl),
     totalSupply: numberValue(source.totalSupply, 0),
     decimals: numberValue(source.decimals, 9),
     allocations: {
@@ -198,6 +201,9 @@ export function normalizeToken(input: unknown): Token {
       website: optionalString(social.website),
       twitter: optionalString(social.twitter),
       telegram: optionalString(social.telegram),
+      youtube: optionalString(social.youtube),
+      tiktok: optionalString(social.tiktok),
+      github: optionalString(social.github),
     },
     creator: stringValue(source.creator, ""),
     createdAt: stringValue(source.createdAt, now),
