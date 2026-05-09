@@ -145,7 +145,7 @@ export function normalizeTonConnectError(err: unknown): string {
   }
 
   if (text.includes("wallet") && (text.includes("fail") || text.includes("attempt"))) {
-    return "Wallet connection failed. Please reset connection and try again.";
+    return "Wallet connection failed. Please try again.";
   }
 
   if (

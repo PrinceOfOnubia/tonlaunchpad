@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   description:
     "Fair and transparent TON presales with simple on-chain claims, refunds, and creator treasury release.",
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+    process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "https://tonlaunchpad.vercel.app",
   ),
   openGraph: {
     title: "TonPad",

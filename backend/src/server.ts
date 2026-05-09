@@ -12,7 +12,7 @@ app.set("trust proxy", true);
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || origin === config.frontendOrigin || origin.startsWith("http://localhost:")) {
+      if (!origin || origin === config.frontendOrigin) {
         callback(null, true);
         return;
       }
