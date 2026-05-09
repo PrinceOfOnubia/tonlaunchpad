@@ -33,11 +33,14 @@ export function TokenCard({ token, className }: Props) {
     <Link
       href={`/token/${token.id}`}
       className={cn(
-        "group glass relative block overflow-hidden p-5 transition-all duration-300",
+        "group glass relative block overflow-hidden p-0 transition-all duration-300",
         "hover:-translate-y-0.5 hover:shadow-glow-ton hover:ring-1 hover:ring-ton-200",
         className,
       )}
     >
+      <CardBanner token={token} />
+
+      <div className="p-5">
       <div className="flex items-start gap-3">
         <TokenAvatar token={token} />
         <div className="min-w-0 flex-1">
@@ -99,8 +102,26 @@ export function TokenCard({ token, className }: Props) {
           </div>
         </div>
       )}
+      </div>
     </Link>
   );
+}
+
+function CardBanner({ token }: { token: Token }) {
+  const [failed, setFailed] = useState(false);
+  if (token.bannerUrl && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={token.bannerUrl}
+        alt=""
+        onError={() => setFailed(true)}
+        className="h-24 w-full object-cover"
+      />
+    );
+  }
+  // Fallback: subtle blue gradient strip so cards still look intentional
+  return <div className="h-24 w-full bg-gradient-to-br from-ton-100 via-ton-50 to-white" />;
 }
 
 function TokenAvatar({ token }: { token: Token }) {
