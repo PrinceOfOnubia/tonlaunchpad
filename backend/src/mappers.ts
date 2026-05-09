@@ -46,6 +46,12 @@ export function launchToToken(launch: Launch) {
     },
     liquidityPercent: launch.liquidityPercent,
     social: asSocial(launch.social),
+    platformFees: {
+      tonTreasury: launch.platformTonTreasury,
+      tokenTreasury: launch.platformTokenTreasury,
+      tonFeeBps: launch.platformTonFeeBps,
+      tokenFeeBps: launch.platformTokenFeeBps,
+    },
     creator: launch.creatorWallet,
     createdAt: launch.createdAt.toISOString(),
     price: 0,

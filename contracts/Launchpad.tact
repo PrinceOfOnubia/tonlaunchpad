@@ -21,8 +21,10 @@ const ERR_INSUFFICIENT_BALANCE: Int = 123;
 
 const BPS_DENOMINATOR: Int = 10000;
 const PERCENT_DENOMINATOR: Int = 100;
-const PLATFORM_TON_FEE_BPS: Int = 500;
-const PLATFORM_TOKEN_FEE_BPS: Int = 100;
+const DEFAULT_PLATFORM_TON_FEE_BPS: Int = 500;
+const DEFAULT_PLATFORM_TOKEN_FEE_BPS: Int = 100;
+const MAX_PLATFORM_TON_FEE_BPS: Int = 500;
+const MAX_PLATFORM_TOKEN_FEE_BPS: Int = 100;
 const TOKEN_TRANSFER_GAS: Int = 100000000;
 const DEPLOY_VALUE: Int = 50000000;
 const TOKEN_DEPLOY_VALUE: Int = 250000000;
@@ -83,6 +85,26 @@ message Pause {}
 message Unpause {}
 message CancelSale {}
 
+message UpdatePlatformTonTreasury {
+    newAddress: Address;
+}
+
+message UpdatePlatformTokenTreasury {
+    newAddress: Address;
+}
+
+message UpdatePlatformTonFeeBps {
+    newFeeBps: Int;
+}
+
+message UpdatePlatformTokenFeeBps {
+    newFeeBps: Int;
+}
+
+message TransferOwnership {
+    newOwner: Address;
+}
+
 struct LaunchRecord {
     token: Address;
     pool: Address;
@@ -132,7 +154,10 @@ struct PresaleConfig {
     creator: Address;
     token: Address;
     treasuryAddress: Address;
-    platformTreasury: Address;
+    platformTonTreasury: Address;
+    platformTokenTreasury: Address;
+    platformTonFeeBps: Int;
+    platformTokenFeeBps: Int;
     presaleRate: Int;
     softCap: Int;
     hardCap: Int;
@@ -145,6 +170,15 @@ struct PresaleConfig {
     buyerTokenAllocation: Int;
     platformTokenFee: Int;
     liquidityTokenAllocation: Int;
+}
+
+struct FactoryConfig {
+    owner: Address;
+    platformTonTreasury: Address;
+    platformTokenTreasury: Address;
+    platformTonFeeBps: Int;
+    platformTokenFeeBps: Int;
+    launchCount: Int;
 }
 
 contract LaunchpadJettonMaster with Deployable {
@@ -283,7 +317,10 @@ contract PresalePool with Deployable {
     creator: Address;
     token: Address;
     treasuryAddress: Address;
-    platformTreasury: Address;
+    platformTonTreasury: Address;
+    platformTokenTreasury: Address;
+    platformTonFeeBps: Int;
+    platformTokenFeeBps: Int;
     presaleRate: Int;
     softCap: Int;
     hardCap: Int;
@@ -315,7 +352,10 @@ contract PresalePool with Deployable {
         creator: Address,
         token: Address,
         treasuryAddress: Address,
-        platformTreasury: Address,
+        platformTonTreasury: Address,
+        platformTokenTreasury: Address,
+        platformTonFeeBps: Int,
+        platformTokenFeeBps: Int,
         presaleRate: Int,
         softCap: Int,
         hardCap: Int,
@@ -334,13 +374,18 @@ contract PresalePool with Deployable {
         throwUnless(ERR_BAD_CAPS, minContribution <= maxContribution);
         throwUnless(ERR_BAD_TIME, startTime < endTime);
         throwUnless(ERR_BAD_ALLOCATION, liquidityPercentOfRaised <= 100);
+        throwUnless(ERR_BAD_CAPS, platformTonFeeBps <= MAX_PLATFORM_TON_FEE_BPS);
+        throwUnless(ERR_BAD_CAPS, platformTokenFeeBps <= MAX_PLATFORM_TOKEN_FEE_BPS);
         throwUnless(ERR_BAD_ALLOCATION, buyerTokenAllocation + platformTokenFee == presaleTokenAllocation);
 
         self.factory = factory;
         self.creator = creator;
         self.token = token;
         self.treasuryAddress = treasuryAddress;
-        self.platformTreasury = platformTreasury;
+        self.platformTonTreasury = platformTonTreasury;
+        self.platformTokenTreasury = platformTokenTreasury;
+        self.platformTonFeeBps = platformTonFeeBps;
+        self.platformTokenFeeBps = platformTokenFeeBps;
         self.presaleRate = presaleRate;
         self.softCap = softCap;
         self.hardCap = hardCap;
@@ -485,7 +530,7 @@ contract PresalePool with Deployable {
         self.platformTonFeePaid = true;
 
         send(SendParameters{
-            to: self.platformTreasury,
+            to: self.platformTonTreasury,
             value: platformFee,
             mode: SendPayGasSeparately + SendIgnoreErrors,
             bounce: false
@@ -519,7 +564,7 @@ contract PresalePool with Deployable {
     }
 
     fun platformTonFee(): Int {
-        return (self.totalRaised * PLATFORM_TON_FEE_BPS) / BPS_DENOMINATOR;
+        return (self.totalRaised * self.platformTonFeeBps) / BPS_DENOMINATOR;
     }
 
     fun tokensForTon(amount: Int): Int {
@@ -576,7 +621,10 @@ contract PresalePool with Deployable {
             creator: self.creator,
             token: self.token,
             treasuryAddress: self.treasuryAddress,
-            platformTreasury: self.platformTreasury,
+            platformTonTreasury: self.platformTonTreasury,
+            platformTokenTreasury: self.platformTokenTreasury,
+            platformTonFeeBps: self.platformTonFeeBps,
+            platformTokenFeeBps: self.platformTokenFeeBps,
             presaleRate: self.presaleRate,
             softCap: self.softCap,
             hardCap: self.hardCap,
@@ -603,12 +651,47 @@ contract PresalePool with Deployable {
 
 contract LaunchpadFactory with Deployable {
     owner: Address;
+    platformTonTreasury: Address;
+    platformTokenTreasury: Address;
+    platformTonFeeBps: Int;
+    platformTokenFeeBps: Int;
     launchCount: Int;
     records: map<Int, LaunchRecord>;
 
     init(owner: Address) {
         self.owner = owner;
+        self.platformTonTreasury = owner;
+        self.platformTokenTreasury = owner;
+        self.platformTonFeeBps = DEFAULT_PLATFORM_TON_FEE_BPS;
+        self.platformTokenFeeBps = DEFAULT_PLATFORM_TOKEN_FEE_BPS;
         self.launchCount = 0;
+    }
+
+    receive(msg: UpdatePlatformTonTreasury) {
+        throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
+        self.platformTonTreasury = msg.newAddress;
+    }
+
+    receive(msg: UpdatePlatformTokenTreasury) {
+        throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
+        self.platformTokenTreasury = msg.newAddress;
+    }
+
+    receive(msg: UpdatePlatformTonFeeBps) {
+        throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
+        throwUnless(ERR_BAD_CAPS, msg.newFeeBps <= MAX_PLATFORM_TON_FEE_BPS);
+        self.platformTonFeeBps = msg.newFeeBps;
+    }
+
+    receive(msg: UpdatePlatformTokenFeeBps) {
+        throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
+        throwUnless(ERR_BAD_CAPS, msg.newFeeBps <= MAX_PLATFORM_TOKEN_FEE_BPS);
+        self.platformTokenFeeBps = msg.newFeeBps;
+    }
+
+    receive(msg: TransferOwnership) {
+        throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
+        self.owner = msg.newOwner;
     }
 
     receive(msg: LaunchToken) {
@@ -623,7 +706,7 @@ contract LaunchpadFactory with Deployable {
         let tokenInit: StateInit = initOf LaunchpadJettonMaster(myAddress(), msg.name, msg.symbol, msg.description, msg.metadata, msg.totalSupply, msg.decimals);
         let tokenAddress: Address = contractAddress(tokenInit);
         let presaleAllocation: Int = (msg.totalSupply * msg.presalePercent) / PERCENT_DENOMINATOR;
-        let platformTokenFee: Int = (presaleAllocation * PLATFORM_TOKEN_FEE_BPS) / BPS_DENOMINATOR;
+        let platformTokenFee: Int = (presaleAllocation * self.platformTokenFeeBps) / BPS_DENOMINATOR;
         let buyerTokenAllocation: Int = presaleAllocation - platformTokenFee;
         let liquidityAllocation: Int = (msg.totalSupply * msg.liquidityPercentTokens) / PERCENT_DENOMINATOR;
         let creatorAllocation: Int = msg.totalSupply - presaleAllocation - liquidityAllocation;
@@ -634,7 +717,10 @@ contract LaunchpadFactory with Deployable {
             creator,
             tokenAddress,
             msg.treasuryAddress,
-            self.owner,
+            self.platformTonTreasury,
+            self.platformTokenTreasury,
+            self.platformTonFeeBps,
+            self.platformTokenFeeBps,
             msg.presaleRate,
             msg.softCap,
             msg.hardCap,
@@ -661,7 +747,7 @@ contract LaunchpadFactory with Deployable {
             body: MintToken{to: poolAddress, amount: buyerTokenAllocation}.toCell()
         });
         deploy(DeployParameters{init: poolInit, value: DEPLOY_VALUE, mode: SendIgnoreErrors, bounce: false, body: Deploy{queryId: launchId}.toCell()});
-        send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: self.owner, amount: platformTokenFee}.toCell()});
+        send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: self.platformTokenTreasury, amount: platformTokenFee}.toCell()});
         send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: creator, amount: creatorManagedAllocation}.toCell()});
     }
 
@@ -673,5 +759,16 @@ contract LaunchpadFactory with Deployable {
         let record: LaunchRecord? = self.records.get(id);
         throwUnless(ERR_NO_CONTRIBUTION, record != null);
         return record!!;
+    }
+
+    get fun getFactoryConfig(): FactoryConfig {
+        return FactoryConfig{
+            owner: self.owner,
+            platformTonTreasury: self.platformTonTreasury,
+            platformTokenTreasury: self.platformTokenTreasury,
+            platformTonFeeBps: self.platformTonFeeBps,
+            platformTokenFeeBps: self.platformTokenFeeBps,
+            launchCount: self.launchCount
+        };
     }
 }

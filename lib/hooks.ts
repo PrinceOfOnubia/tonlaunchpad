@@ -17,6 +17,7 @@ import {
 import type {
   ChartTimeframe,
   TokenListParams,
+  UserProfile,
 } from "./types";
 
 const defaultConfig: SWRConfiguration = {
@@ -71,7 +72,7 @@ export function useToken(id: string | null | undefined, config: SWRConfiguration
     }
   }, {
     ...defaultConfig,
-    refreshInterval: 15_000, // live presale numbers
+    refreshInterval: 5_000,
     ...config,
   });
 }
@@ -137,6 +138,37 @@ export function useUserPortfolio(
       }
     },
     { ...defaultConfig, ...config },
+  );
+}
+
+export function useUserProfile(
+  wallet: string | null | undefined,
+  config: SWRConfiguration = {},
+) {
+  return useSWR(
+    wallet ? (["profile", wallet] as const) : null,
+    async ([, w]) => {
+      try {
+        return await api.user.profile(w!);
+      } catch (err) {
+        console.warn("Indexer temporarily unavailable; showing local profile fallback.", err);
+        return {
+          wallet: w!,
+          createdTokens: recentCreatedTokens(w!),
+          createdLaunches: recentCreatedTokens(w!),
+          contributedLaunches: [],
+          claimedTokens: [],
+          claimableTokens: [],
+          creatorAllocations: [],
+          contributions: [],
+          transactions: recentWalletTransactions(w!),
+          claimable: [],
+          refundable: [],
+          portfolio: emptyPortfolio(w!),
+        } satisfies UserProfile;
+      }
+    },
+    { ...defaultConfig, refreshInterval: 15_000, ...config },
   );
 }
 

@@ -11,7 +11,7 @@ export default function CreatePage() {
         </h1>
         <p className="mt-2 text-sm text-ink-500 sm:text-base">
           Configure identity, allocation, and presale parameters. Platform fee: 5% of raised TON
-          plus 1% of presale tokens on successful sales.
+          on successful sales.
         </p>
       </div>
       <CreateTokenForm />

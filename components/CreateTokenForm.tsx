@@ -1005,14 +1005,8 @@ function StepReview({
           </div>
         )}
 
-        <ReviewSection title="Platform fees">
-          <ReviewRow label="TON fee" value="5% of raised TON" />
-          <ReviewRow label="Token fee" value="1% of presale tokens" />
-          <ReviewRow label="Creator treasury" value="95% of successful raise" />
-        </ReviewSection>
-
         <div className="rounded-xl bg-ton-50 p-4 text-sm font-semibold text-ton-700 ring-1 ring-ton-200">
-          Platform fee: 5% of raised TON + 1% of presale tokens.
+          Platform fee: 5% of raised TON.
         </div>
       </div>
     </Section>

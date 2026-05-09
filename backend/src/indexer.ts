@@ -15,6 +15,12 @@ export function startIndexer() {
   setInterval(() => void indexer.tick(), config.indexerIntervalMs).unref();
 }
 
+export async function reconcileFactoryLaunches() {
+  const indexer = new TonpadIndexer();
+  await indexer.pollFactory();
+  await indexer.refreshLaunches();
+}
+
 class TonpadIndexer {
   private running = false;
   private client = new TonClient({
@@ -37,7 +43,7 @@ class TonpadIndexer {
     }
   }
 
-  private async pollFactory() {
+  async pollFactory() {
     const factory = Address.parse(config.factoryAddress);
     const countResult = await this.client.runMethod(factory, "getLaunchCount");
     const launchCount = Number(countResult.stack.readBigNumber());
@@ -111,7 +117,7 @@ class TonpadIndexer {
     }
   }
 
-  private async refreshLaunches() {
+  async refreshLaunches() {
     const launches = await prisma.launch.findMany();
     await Promise.all(
       launches.map(async (launch) => {

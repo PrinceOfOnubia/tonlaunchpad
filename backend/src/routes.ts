@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { config } from "./config";
 import { prisma } from "./db";
+import { reconcileFactoryLaunches } from "./indexer";
 import { computeStatus, launchToToken, txToApi } from "./mappers";
 import { createLaunchSchema, listQuerySchema, tonAddressSchema } from "./validation";
 
@@ -122,7 +123,7 @@ router.get("/api/launches", async (req, res, next) => {
 
 router.get("/api/launches/:id", async (req, res, next) => {
   try {
-    const launch = await prisma.launch.findFirst({
+    let launch = await prisma.launch.findFirst({
       where: {
         OR: [
           { id: req.params.id },
@@ -133,6 +134,20 @@ router.get("/api/launches/:id", async (req, res, next) => {
       },
     });
     if (!launch) return res.status(404).json({ message: "Launch not found" });
+    if (launch.pendingIndexing || !launch.presalePoolAddress) {
+      try {
+        await reconcileFactoryLaunches();
+        launch =
+          (await prisma.launch.findUnique({ where: { id: launch.id } })) ?? launch;
+        console.log("[api] launch reconciliation check", {
+          id: launch.id,
+          presalePoolAddress: launch.presalePoolAddress,
+          tokenMasterAddress: launch.tokenMasterAddress,
+        });
+      } catch (err) {
+        console.warn("[api] launch reconciliation skipped", err);
+      }
+    }
 
     const contributors = await prisma.transaction.groupBy({
       by: ["walletAddress"],
@@ -163,6 +178,10 @@ router.post("/api/launches", async (req, res, next) => {
     });
 
     const factoryAddress = body.factoryAddress ?? config.factoryAddress;
+    const platformTonTreasury = (body.platformTonTreasury ?? config.platformTonTreasury) || null;
+    const platformTokenTreasury = (body.platformTokenTreasury ?? config.platformTokenTreasury) || null;
+    const platformTonFeeBps = body.platformTonFeeBps ?? config.platformTonFeeBps;
+    const platformTokenFeeBps = body.platformTokenFeeBps ?? config.platformTokenFeeBps;
     const status = computeStatus({
       startTime: body.presale.startTime,
       endTime: body.presale.endTime,
@@ -198,6 +217,10 @@ router.post("/api/launches", async (req, res, next) => {
         presaleAllocation: body.allocations.presale,
         liquidityAllocation: body.allocations.liquidity,
         creatorAllocation: body.allocations.creator,
+        platformTonTreasury,
+        platformTokenTreasury,
+        platformTonFeeBps,
+        platformTokenFeeBps,
         social: body.social,
         pendingIndexing: !(body.tokenMasterAddress && body.presalePoolAddress),
       },
@@ -209,9 +232,19 @@ router.post("/api/launches", async (req, res, next) => {
         pendingIndexing:
           body.tokenMasterAddress && body.presalePoolAddress ? false : undefined,
         status,
+        platformTonTreasury: platformTonTreasury ?? undefined,
+        platformTokenTreasury: platformTokenTreasury ?? undefined,
+        platformTonFeeBps,
+        platformTokenFeeBps,
         social: body.social,
       },
     });
+
+    if (launch.pendingIndexing || !launch.presalePoolAddress) {
+      void reconcileFactoryLaunches()
+        .then(() => console.log("[api] async launch reconciliation requested", { id: launch.id, txHash: launch.txHash }))
+        .catch((err) => console.warn("[api] async launch reconciliation failed", err));
+    }
 
     if (body.txHash) {
       await prisma.transaction.upsert({
@@ -256,7 +289,6 @@ router.get("/api/stats", async (_req, res, next) => {
       totalRaisedTon: stats.totalRaisedTon,
       totalUsers: stats.activeHolders,
       totalVolumeTon: stats.volume24hTon,
-      note: stats.volume24hTon === 0 ? "Volume data coming soon" : undefined,
     });
   } catch (err) {
     next(err);
@@ -288,12 +320,16 @@ router.get("/api/profile/:wallet", async (req, res, next) => {
 
     const claimable = contributions
       .filter((tx) => tx.launch.status === "succeeded")
-      .map((tx) => ({ launch: launchToToken(tx.launch), amountTon: tx.amountTon }));
+      .map((tx) => ({
+        launch: launchToToken(tx.launch),
+        amountTon: tx.amountTon,
+        tokenAmount: tx.tokenAmount || tx.amountTon * tx.launch.presaleRate,
+      }));
     const refundable = contributions
       .filter((tx) => tx.launch.status === "failed")
       .map((tx) => ({ launch: launchToToken(tx.launch), amountTon: tx.amountTon }));
 
-    const holdings = holders.map((holder) => ({
+    const indexedHoldings = holders.map((holder) => ({
       tokenId: holder.launchId,
       symbol: holder.launch.symbol,
       name: holder.launch.tokenName,
@@ -302,9 +338,47 @@ router.get("/api/profile/:wallet", async (req, res, next) => {
       valueTon: 0,
       pnlPercent: 0,
     }));
+    const indexedIds = new Set(indexedHoldings.map((holding) => holding.tokenId));
+    const creatorAllocations = created.map((launch) => {
+      const creatorAmount = (launch.totalSupply * (launch.creatorAllocation + launch.liquidityAllocation)) / 100;
+      return {
+        tokenId: launch.id,
+        symbol: launch.symbol,
+        name: launch.tokenName,
+        imageUrl: launch.logoUrl,
+        amount: creatorAmount,
+        valueTon: 0,
+        pnlPercent: 0,
+        allocationType: "creator",
+      };
+    });
+    const contributionPositions = contributions
+      .filter((tx) => tx.launch.status !== "failed")
+      .map((tx) => ({
+        tokenId: tx.launchId,
+        symbol: tx.launch.symbol,
+        name: tx.launch.tokenName,
+        imageUrl: tx.launch.logoUrl,
+        amount: tx.tokenAmount || tx.amountTon * tx.launch.presaleRate,
+        valueTon: tx.amountTon,
+        pnlPercent: 0,
+        allocationType: tx.launch.status === "succeeded" ? "claimable" : "presale",
+      }));
+    const holdings = [
+      ...indexedHoldings,
+      ...creatorAllocations.filter((holding) => !indexedIds.has(holding.tokenId)),
+      ...contributionPositions,
+    ];
 
     res.json({
       wallet,
+      createdLaunches: created.map(launchToToken),
+      contributedLaunches: contributions.map((tx) => ({ launch: launchToToken(tx.launch), transaction: txToApi(tx) })),
+      claimedTokens: transactions
+        .filter((tx) => tx.type === "claim")
+        .map((tx) => ({ launch: launchToToken(tx.launch), transaction: txToApi(tx) })),
+      claimableTokens: claimable,
+      creatorAllocations,
       createdTokens: created.map(launchToToken),
       contributions: contributions.map((tx) => ({ launch: launchToToken(tx.launch), transaction: txToApi(tx) })),
       transactions: transactions.map(txToApi),
@@ -501,7 +575,7 @@ async function safeDb<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-function emptyStats(note: string) {
+function emptyStats(_note: string) {
   return {
     tokensLaunched: 0,
     totalRaised: 0,
@@ -511,7 +585,6 @@ function emptyStats(note: string) {
     totalRaisedTon: 0,
     totalUsers: 0,
     totalVolumeTon: 0,
-    note,
   };
 }
 

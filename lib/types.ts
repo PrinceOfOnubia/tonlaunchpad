@@ -76,6 +76,12 @@ export interface Token {
   marketCap: number;
   volume24h: number;
   holders: number;
+  platformFees?: {
+    tonTreasury?: string | null;
+    tokenTreasury?: string | null;
+    tonFeeBps: number;
+    tokenFeeBps: number;
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -129,6 +135,7 @@ export interface PortfolioHolding {
   amount: number;
   valueTon: number;
   pnlPercent: number;
+  allocationType?: "creator" | "presale" | "claimable";
 }
 
 export interface UserPortfolio {
@@ -136,6 +143,28 @@ export interface UserPortfolio {
   totalValueTon: number;
   pnlPercent: number;
   holdings: PortfolioHolding[];
+}
+
+export interface ProfileLaunchPosition {
+  launch: Token;
+  amountTon?: number;
+  tokenAmount?: number;
+  transaction?: Transaction;
+}
+
+export interface UserProfile {
+  wallet: string;
+  createdTokens: Token[];
+  createdLaunches?: Token[];
+  contributedLaunches?: ProfileLaunchPosition[];
+  claimedTokens?: ProfileLaunchPosition[];
+  claimableTokens?: ProfileLaunchPosition[];
+  creatorAllocations?: PortfolioHolding[];
+  contributions: ProfileLaunchPosition[];
+  transactions: Transaction[];
+  claimable?: ProfileLaunchPosition[];
+  refundable?: ProfileLaunchPosition[];
+  portfolio: UserPortfolio;
 }
 
 // -----------------------------------------------------------------------------

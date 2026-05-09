@@ -4,17 +4,18 @@ import { useState } from "react";
 import Link from "next/link";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { ExternalLink, Loader2, Wallet } from "lucide-react";
-import { useUserPortfolio, useUserCreated, useUserTransactions } from "@/lib/hooks";
+import { useUserProfile } from "@/lib/hooks";
 import { TokenCard } from "@/components/TokenCard";
 import { cn, formatPercent, formatTon, shortAddress, timeAgo } from "@/lib/utils";
-import type { PortfolioHolding, Transaction, TxKind } from "@/lib/types";
+import type { PortfolioHolding, ProfileLaunchPosition, Transaction, TxKind } from "@/lib/types";
 
-type Tab = "portfolio" | "created" | "history";
+type Tab = "portfolio" | "created" | "contributions" | "history";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "portfolio", label: "Portfolio" },
-  { id: "created", label: "My Tokens" },
-  { id: "history", label: "Transactions" },
+  { id: "portfolio", label: "My Portfolio" },
+  { id: "created", label: "My Created Tokens" },
+  { id: "contributions", label: "My Contributions" },
+  { id: "history", label: "My Transactions" },
 ];
 
 export default function ProfilePage() {
@@ -70,6 +71,7 @@ export default function ProfilePage() {
       <div className="mt-6">
         {tab === "portfolio" && <PortfolioTab wallet={wallet} />}
         {tab === "created" && <CreatedTab wallet={wallet} />}
+        {tab === "contributions" && <ContributionsTab wallet={wallet} />}
         {tab === "history" && <HistoryTab wallet={wallet} />}
       </div>
     </div>
@@ -80,36 +82,30 @@ export default function ProfilePage() {
 // Tabs
 // ---------------------------------------------------------------------------
 function PortfolioTab({ wallet }: { wallet: string }) {
-  const { data, isLoading, error } = useUserPortfolio(wallet);
+  const { data, isLoading, error } = useUserProfile(wallet);
+  const portfolio = data?.portfolio;
 
   if (isLoading) return <CenterSpinner />;
   if (error) return <Empty>Failed to load portfolio</Empty>;
-  if (!data || data.holdings.length === 0) {
-    return (
-      <Empty>
-        No holdings yet.{" "}
-        <Link href="/tokens" className="font-semibold text-ton-600 hover:text-ton-700">
-          Discover tokens →
-        </Link>
-      </Empty>
-    );
+  if (!portfolio || portfolio.holdings.length === 0) {
+    return <Empty>No portfolio positions yet</Empty>;
   }
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Stat label="Total value" value={formatTon(data.totalValueTon)} />
+        <Stat label="Total value" value={formatTon(portfolio.totalValueTon)} />
         <Stat
           label="P&L"
-          value={formatPercent(data.pnlPercent)}
-          valueClass={data.pnlPercent >= 0 ? "text-emerald-600" : "text-red-600"}
+          value={formatPercent(portfolio.pnlPercent)}
+          valueClass={portfolio.pnlPercent >= 0 ? "text-emerald-600" : "text-red-600"}
         />
       </div>
 
       <div className="glass overflow-hidden">
         <ul className="divide-y divide-ink-100">
-          {data.holdings.map((h) => (
-            <HoldingRow key={h.tokenId} h={h} />
+          {portfolio.holdings.map((h, index) => (
+            <HoldingRow key={`${h.tokenId}-${h.allocationType ?? "holding"}-${index}`} h={h} />
           ))}
         </ul>
       </div>
@@ -153,38 +149,52 @@ function HoldingRow({ h }: { h: PortfolioHolding }) {
 }
 
 function CreatedTab({ wallet }: { wallet: string }) {
-  const { data, isLoading, error } = useUserCreated(wallet);
+  const { data, isLoading, error } = useUserProfile(wallet);
+  const created = data?.createdLaunches ?? data?.createdTokens ?? [];
   if (isLoading) return <CenterSpinner />;
   if (error) return <Empty>Failed to load your tokens</Empty>;
-  if (!data || data.length === 0) {
-    return (
-      <Empty>
-        You haven&apos;t launched any tokens yet.{" "}
-        <Link href="/create" className="font-semibold text-ton-600 hover:text-ton-700">
-          Create one →
-        </Link>
-      </Empty>
-    );
+  if (created.length === 0) {
+    return <Empty>No created tokens yet</Empty>;
   }
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {data.map((t) => (
+      {created.map((t) => (
         <TokenCard key={t.id} token={t} />
       ))}
     </div>
   );
 }
 
-function HistoryTab({ wallet }: { wallet: string }) {
-  const { data, isLoading, error } = useUserTransactions(wallet);
+function ContributionsTab({ wallet }: { wallet: string }) {
+  const { data, isLoading, error } = useUserProfile(wallet);
+  const contributions = data?.contributedLaunches ?? data?.contributions ?? [];
+
   if (isLoading) return <CenterSpinner />;
-  if (error) return <Empty>Failed to load transactions</Empty>;
-  if (!data || data.length === 0) return <Empty>No transactions found</Empty>;
+  if (error) return <Empty>Failed to load contributions</Empty>;
+  if (contributions.length === 0) return <Empty>No contributions yet</Empty>;
 
   return (
     <div className="glass overflow-hidden">
       <ul className="divide-y divide-ink-100">
-        {data.map((tx) => (
+        {contributions.map((position, index) => (
+          <ContributionRow key={`${position.launch.id}-${position.transaction?.id ?? index}`} position={position} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function HistoryTab({ wallet }: { wallet: string }) {
+  const { data, isLoading, error } = useUserProfile(wallet);
+  const transactions = data?.transactions ?? [];
+  if (isLoading) return <CenterSpinner />;
+  if (error) return <Empty>Failed to load transactions</Empty>;
+  if (transactions.length === 0) return <Empty>No transactions yet</Empty>;
+
+  return (
+    <div className="glass overflow-hidden">
+      <ul className="divide-y divide-ink-100">
+        {transactions.map((tx) => (
           <TxRow key={tx.id} tx={tx} />
         ))}
       </ul>
@@ -218,7 +228,7 @@ function TxRow({ tx }: { tx: Transaction }) {
         </div>
         <div className="text-xs text-ink-500">
           {tx.tokenName ? `${tx.tokenName} · ` : ""}
-          {timeAgo(tx.timestamp)} · {shortAddress(tx.hash || tx.relatedAddress || tx.wallet, 6, 4)}
+          {timeAgo(tx.timestamp)} · {tx.hash ? shortAddress(tx.hash, 6, 4) : "Pending"}
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -237,6 +247,29 @@ function TxRow({ tx }: { tx: Transaction }) {
         >
           <ExternalLink size={15} />
         </a>
+      </div>
+    </li>
+  );
+}
+
+function ContributionRow({ position }: { position: ProfileLaunchPosition }) {
+  const tx = position.transaction;
+  return (
+    <li className="flex items-center justify-between gap-4 px-5 py-3">
+      <Link href={`/token/${position.launch.id}`} className="min-w-0">
+        <div className="truncate text-sm font-semibold text-ink-900">
+          {position.launch.name}
+          <span className="ml-2 font-mono text-xs text-ink-500">{position.launch.symbol}</span>
+        </div>
+        <div className="text-xs text-ink-500">
+          {tx ? timeAgo(tx.timestamp) : "Position recorded"}
+        </div>
+      </Link>
+      <div className="text-right font-mono text-sm">
+        <div className="font-semibold text-ink-900">{formatTon(position.amountTon ?? tx?.amountTon ?? 0)}</div>
+        <div className="text-xs text-ink-500">
+          {(position.tokenAmount ?? tx?.amountToken ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} tokens
+        </div>
       </div>
     </li>
   );

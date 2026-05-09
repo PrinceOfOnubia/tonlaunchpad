@@ -13,6 +13,7 @@ import type {
   Token,
   TokenListParams,
   Transaction,
+  UserProfile,
   UserPortfolio,
 } from "./types";
 
@@ -110,13 +111,6 @@ export interface CreateLaunchRequest extends CreateTokenPayload {
   presalePoolAddress?: string | null;
 }
 
-interface ProfileResponse {
-  wallet: string;
-  createdTokens: Token[];
-  transactions: Transaction[];
-  portfolio: UserPortfolio;
-}
-
 export const api = {
   tokens: {
     list: (params: TokenListParams = {}, signal?: AbortSignal) =>
@@ -183,13 +177,16 @@ export const api = {
   },
 
   user: {
+    profile: (wallet: string, signal?: AbortSignal) =>
+      request<UserProfile>(`/profile/${encodeURIComponent(wallet)}`, { signal }),
+
     portfolio: (wallet: string, signal?: AbortSignal) =>
-      request<ProfileResponse>(`/profile/${encodeURIComponent(wallet)}`, { signal }).then(
+      request<UserProfile>(`/profile/${encodeURIComponent(wallet)}`, { signal }).then(
         (profile) => profile.portfolio,
       ),
 
     created: (wallet: string, signal?: AbortSignal) =>
-      request<ProfileResponse>(`/profile/${encodeURIComponent(wallet)}`, { signal }).then(
+      request<UserProfile>(`/profile/${encodeURIComponent(wallet)}`, { signal }).then(
         (profile) => profile.createdTokens,
       ),
 

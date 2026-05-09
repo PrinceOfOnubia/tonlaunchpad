@@ -29,7 +29,7 @@ Fields:
 
 Frontend must show this notice before wallet approval:
 
-> Platform fee: 5% of raised TON + 1% of presale tokens.
+> Platform fee: 5% of raised TON.
 
 ## Factory Getters
 

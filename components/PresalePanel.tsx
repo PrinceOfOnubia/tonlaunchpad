@@ -78,7 +78,6 @@ export function PresalePanel({ token }: Props) {
     }
     const poolAddress = token.presalePoolAddress;
     if (!poolAddress) {
-      setError("Presale setup is finalizing. Please try again in a moment.");
       return;
     }
     setBusy("contribute");
@@ -138,7 +137,6 @@ export function PresalePanel({ token }: Props) {
     }
     const poolAddress = token.presalePoolAddress;
     if (!poolAddress) {
-      setError("Presale setup is finalizing. Please try again in a moment.");
       return;
     }
     setBusy("claim");
@@ -187,6 +185,7 @@ export function PresalePanel({ token }: Props) {
           aboveRemaining={aboveRemaining}
           remaining={remaining}
           wallet={wallet || null}
+          poolReady={!!token.presalePoolAddress}
           busy={busy === "contribute"}
           onSubmit={handleContribute}
           endTime={presale.endTime}
@@ -219,7 +218,7 @@ export function PresalePanel({ token }: Props) {
           <div>
             <div className="text-sm font-semibold text-ton-800">Creator treasury</div>
             <div className="mt-1 text-xs text-ton-700">
-              Claim 95% of the raised TON. TONPad receives the 5% platform fee on-chain.
+              Claim the creator treasury after TONPad receives the 5% platform fee on-chain.
             </div>
           </div>
           <button
@@ -292,6 +291,7 @@ function ContributeForm(props: {
   aboveRemaining: boolean;
   remaining: number;
   wallet: string | null;
+  poolReady: boolean;
   busy: boolean;
   onSubmit: () => void;
   endTime: string;
@@ -347,6 +347,7 @@ function ContributeForm(props: {
       <button
         onClick={props.onSubmit}
         disabled={
+          !props.poolReady ||
           (!!props.wallet && !props.amount) ||
           props.busy ||
           props.belowMin ||
@@ -355,8 +356,14 @@ function ContributeForm(props: {
         }
         className="btn-primary w-full"
       >
-        {props.busy ? <Spinner /> : props.wallet ? "Contribute" : "Connect wallet"}
+        {props.busy ? <Spinner /> : !props.poolReady ? "Finalizing presale setup..." : props.wallet ? "Contribute" : "Connect wallet"}
       </button>
+
+      {!props.poolReady && (
+        <div className="rounded-lg bg-ton-50 px-3 py-2 text-center text-xs font-medium text-ton-700 ring-1 ring-ton-100">
+          Finalizing presale setup...
+        </div>
+      )}
 
       <div className="text-center text-[11px] text-ink-500">
         Ends in <span className="font-medium text-ink-700">{timeUntil(props.endTime)}</span>

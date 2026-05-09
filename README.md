@@ -10,7 +10,7 @@ Fees are enforced by the smart contract on successful presales:
 
 - `5%` of total TON raised goes to the platform treasury.
 - `1%` of the presale token allocation goes to the platform Jetton wallet.
-- The creator can claim `95%` of raised TON after success.
+- The creator can claim raised TON remaining after the platform fee after success.
 - Failed presales do not pay the TON platform fee.
 
 Example: a sale raising `1000 TON` pays `50 TON` to the platform and `950 TON` to the creator treasury. A `500,000,000` token presale allocation sends `5,000,000` tokens to the platform and leaves `495,000,000` tokens for buyers.
@@ -85,7 +85,7 @@ Compiled from `contracts/Launchpad.tact`:
 4. Users contribute TON while the sale is live.
 5. If `totalRaised >= softCap`, users can claim Jettons directly from the pool.
 6. Creator calls `CreatorClaimTreasury` or `WithdrawTreasury`.
-7. Pool sends `5%` of raised TON to the platform treasury and `95%` to creator treasury.
+7. Pool sends `5%` of raised TON to the platform TON treasury and the remaining TON to creator treasury.
 8. If the sale fails or is cancelled, users refund TON and creator can recover unsold buyer tokens.
 
 There is no post-sale automation in this architecture. Creator liquidity is handled manually outside the presale pool.

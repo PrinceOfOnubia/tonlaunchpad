@@ -5,7 +5,7 @@ const FEATURES = [
     icon: CircleDollarSign,
     title: "Clear Platform Fees",
     description:
-      "Successful sales pay 5% of raised TON and 1% of presale tokens to the platform. Failed sales remain refundable.",
+      "Successful sales pay 5% of raised TON to the platform. Failed sales remain refundable.",
     accent: true,
   },
   {
