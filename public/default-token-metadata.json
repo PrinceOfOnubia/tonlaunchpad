@@ -1,7 +1,7 @@
 {
   "name": "TONPad Launch",
   "symbol": "TONPAD",
-  "description": "A token launch created with TONPad on TON testnet.",
+  "description": "A token launch created with TONPad.",
   "decimals": 9,
   "image": "https://tonlaunchpad.vercel.app/icon.png"
 }

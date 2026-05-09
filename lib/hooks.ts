@@ -220,3 +220,21 @@ export function useMyContribution(
     { ...defaultConfig, refreshInterval: 15_000, ...config },
   );
 }
+
+export function useWalletBalance(
+  wallet: string | null | undefined,
+  config: SWRConfiguration = {},
+) {
+  return useSWR(
+    wallet ? (["walletBalance", wallet] as const) : null,
+    async ([, w]) => {
+      try {
+        return await api.wallet.balance(w!);
+      } catch (err) {
+        console.warn("Wallet balance unavailable.", err);
+        throw err;
+      }
+    },
+    { ...defaultConfig, refreshInterval: 30_000, ...config },
+  );
+}

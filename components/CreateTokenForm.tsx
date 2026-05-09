@@ -28,6 +28,7 @@ import {
   getLaunchValidationError,
   normalizeTonConnectError,
 } from "@/lib/tonLaunchpad";
+import { tonviewerAddressUrl } from "@/lib/explorer";
 import { saveRecentLaunch, tokenFromLaunchInput } from "@/lib/recentLaunches";
 import { TokenPreview } from "./TokenPreview";
 
@@ -452,7 +453,7 @@ export function CreateTokenForm() {
         setMetadataNotice("Launch saved locally. Your dashboard will update when the service is reachable.");
       }
 
-      setExplorerUrl(testnetExplorerUrl({ address: factoryAddress ?? wallet }));
+      setExplorerUrl(tonviewerAddressUrl(factoryAddress ?? wallet));
       setDeployedId(launchId);
       setDeployStatus("Launch transaction submitted.");
     } catch (err) {
@@ -813,7 +814,7 @@ function StepIdentity(props: {
             <input
               value={data.social.github ?? ""}
               onChange={(e) => patch("social", { github: e.target.value || undefined })}
-              placeholder="github.com/org"
+              placeholder="https://example.com/repo"
               className="input-base"
             />
           </Field>
@@ -1205,8 +1206,4 @@ function validate(d: CreateTokenPayload) {
 function firstValidationError(validation: ReturnType<typeof validate>): string | null {
   const failed = Object.values(validation.bySteps).find((check) => !check.ok);
   return failed?.reason ?? null;
-}
-
-function testnetExplorerUrl({ address }: { address: string }): string {
-  return `https://testnet.tonviewer.com/${encodeURIComponent(address)}`;
 }

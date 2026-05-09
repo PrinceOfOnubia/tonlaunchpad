@@ -83,12 +83,12 @@ POST /api/launches
 
 Save optimistic metadata even before token/pool addresses are reconciled. The backend later updates token master, presale pool, raised amount, claim/refund/treasury transaction state, and stats.
 
-## Testnet Deployment
+## Network Deployment
 
 ```bash
 npm install
 npm run contract:build
-npx blueprint run deployLaunchpad --testnet
+npx blueprint run deployLaunchpad
 ```
 
 Use the deployed `LaunchpadFactory` address as `NEXT_PUBLIC_FACTORY_ADDRESS` and `FACTORY_ADDRESS`.

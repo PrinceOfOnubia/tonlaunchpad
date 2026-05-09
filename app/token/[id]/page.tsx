@@ -12,6 +12,7 @@ import { PresaleProgress } from "@/components/PresaleProgress";
 import { TransactionHistory } from "@/components/TransactionHistory";
 import type { Token } from "@/lib/types";
 import { useEffectivePresale } from "@/lib/presaleStatus";
+import { tonviewerAddressUrl } from "@/lib/explorer";
 
 export default function TokenPage() {
   const params = useParams<{ id: string }>();
@@ -155,7 +156,7 @@ function TokenHeader({ token }: { token: Token }) {
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
             {token.address && (
               <a
-                href={`https://tonviewer.com/${token.address}`}
+                href={tonviewerAddressUrl(token.address)}
                 target="_blank"
                 rel="noreferrer noopener"
                 className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-1 font-mono text-ink-600 hover:bg-ink-200"

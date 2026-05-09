@@ -32,6 +32,20 @@ router.get("/health", (_req, res) => {
   res.json({ ok: true, network: config.network, indexedFactory: config.factoryAddress });
 });
 
+router.get("/api/wallet/:wallet/balance", async (req, res, next) => {
+  try {
+    const wallet = tonAddressSchema.parse(req.params.wallet);
+    const balanceNano = await getAddressBalance(wallet);
+    res.json({
+      wallet,
+      balanceNano,
+      balanceTon: Number(balanceNano) / 1_000_000_000,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/api/upload/image", upload.single("file"), (req, res) => {
   if (!req.file) return res.status(400).json({ message: "Image file is required" });
   const extension = safeExtension(req.file.originalname, req.file.mimetype);
@@ -763,7 +777,31 @@ function emptyProfile(wallet: string, note: string) {
 
 function publicUrl(req: Request, path: string) {
   const base = config.publicBaseUrl || `${req.protocol}://${req.get("host")}`;
-  return `${base}${path}`;
+  return `${base.replace(/^http:\/\//, "https://")}${path}`;
+}
+
+async function getAddressBalance(address: string) {
+  const response = await fetch(config.toncenterEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(config.toncenterApiKey ? { "X-API-Key": config.toncenterApiKey } : {}),
+    },
+    body: JSON.stringify({
+      id: "tonpad-balance",
+      jsonrpc: "2.0",
+      method: "getAddressBalance",
+      params: { address },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Toncenter balance request failed: ${response.status}`);
+  }
+  const body = (await response.json()) as { ok?: boolean; result?: string; error?: string };
+  if (body.ok === false || typeof body.result !== "string") {
+    throw new Error(body.error ?? "Toncenter balance response was invalid");
+  }
+  return body.result;
 }
 
 function safeExtension(originalName: string, mimeType: string) {

@@ -209,6 +209,14 @@ export const api = {
       }),
   },
 
+  wallet: {
+    balance: (wallet: string, signal?: AbortSignal) =>
+      request<{ wallet: string; balanceTon: number; balanceNano: string }>(
+        `/wallet/${encodeURIComponent(wallet)}/balance`,
+        { signal },
+      ),
+  },
+
   upload: {
     image: async (file: File): Promise<{ url: string }> => {
       const fd = new FormData();

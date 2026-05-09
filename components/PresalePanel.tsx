@@ -5,7 +5,7 @@ import { useSWRConfig } from "swr";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { useMyContribution } from "@/lib/hooks";
+import { useMyContribution, useWalletBalance } from "@/lib/hooks";
 import {
   buildContributeTransaction,
   buildCreatorClaimTreasuryTransaction,
@@ -35,6 +35,8 @@ export function PresalePanel({ token }: Props) {
     token.id,
     wallet || null,
   );
+  const { data: walletBalance, isLoading: balanceLoading, mutate: refreshBalance } =
+    useWalletBalance(wallet || null);
 
   const numAmount = parseFloat(amount);
   const validAmount = !Number.isNaN(numAmount) && numAmount > 0;
@@ -143,6 +145,7 @@ export function PresalePanel({ token }: Props) {
         .catch((err) => console.warn("Contribution record unavailable; waiting for indexer.", err));
       setAmount("");
       refreshContrib();
+      refreshBalance();
     } catch (err) {
       if (isWalletTimeout(err)) {
         tonConnectUI.closeModal();
@@ -258,6 +261,8 @@ export function PresalePanel({ token }: Props) {
           endTime={presale.endTime}
           debugTx={lastContributeTx ?? contributionDebugTx(token.presalePoolAddress, numAmount)}
           tonConnectStatus={tonConnectUI.connected ? "connected" : "disconnected"}
+          walletBalanceTon={walletBalance?.balanceTon}
+          balanceLoading={balanceLoading}
         />
       )}
 
@@ -367,6 +372,8 @@ function ContributeForm(props: {
   endTime: string;
   debugTx: LaunchTxDebug | null;
   tonConnectStatus: string;
+  walletBalanceTon?: number;
+  balanceLoading: boolean;
 }) {
   return (
     <div className="space-y-3">
@@ -413,6 +420,19 @@ function ContributeForm(props: {
         <span className="font-mono font-semibold text-ink-900">
           {props.tokensReceived.toLocaleString(undefined, { maximumFractionDigits: 4 })}{" "}
           {props.symbol}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs ring-1 ring-ink-100">
+        <span className="text-ink-500">Wallet balance</span>
+        <span className="font-mono font-semibold text-ink-900">
+          {!props.wallet
+            ? "Connect wallet to view balance"
+            : props.balanceLoading
+              ? "Loading..."
+              : props.walletBalanceTon !== undefined
+                ? formatTon(props.walletBalanceTon, 2)
+                : "Unavailable"}
         </span>
       </div>
 

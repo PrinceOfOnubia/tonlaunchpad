@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowDownLeft, ArrowUpRight, Loader2, WalletCards } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ExternalLink, Loader2, WalletCards } from "lucide-react";
 import { useTokenTransactions } from "@/lib/hooks";
 import { cn, formatTon, shortAddress, timeAgo } from "@/lib/utils";
+import { tonviewerUrl } from "@/lib/explorer";
 import type { Transaction, TxKind } from "@/lib/types";
 
 export function TransactionHistory({ tokenId, symbol }: { tokenId: string; symbol: string }) {
@@ -44,6 +45,7 @@ function EmptyRow({ children }: { children: React.ReactNode }) {
 
 function TxRow({ tx, symbol }: { tx: Transaction; symbol: string }) {
   const meta = META[tx.kind];
+  const explorer = tonviewerUrl({ txHash: tx.hash, address: tx.relatedAddress ?? tx.wallet });
   return (
     <li className="flex items-center gap-3 px-5 py-3 hover:bg-ink-50/60">
       <div
@@ -62,11 +64,22 @@ function TxRow({ tx, symbol }: { tx: Transaction; symbol: string }) {
         </div>
         <div className="text-xs text-ink-500">{timeAgo(tx.timestamp)}</div>
       </div>
-      <div className="text-right text-sm">
-        <div className="font-mono font-semibold text-ink-900">{formatTon(tx.amountTon)}</div>
-        <div className="font-mono text-xs text-ink-500">
-          {tx.amountToken.toLocaleString(undefined, { maximumFractionDigits: 2 })} {symbol}
+      <div className="flex items-center gap-3">
+        <div className="text-right text-sm">
+          <div className="font-mono font-semibold text-ink-900">{formatTon(tx.amountTon)}</div>
+          <div className="font-mono text-xs text-ink-500">
+            {tx.amountToken.toLocaleString(undefined, { maximumFractionDigits: 2 })} {symbol}
+          </div>
         </div>
+        <a
+          href={explorer}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="rounded-md p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ton-600"
+          aria-label="Open in Tonviewer"
+        >
+          <ExternalLink size={15} />
+        </a>
       </div>
     </li>
   );

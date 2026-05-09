@@ -154,7 +154,7 @@ export function normalizeTonConnectError(err: unknown): string {
     text.includes("balance") ||
     text.includes("gas")
   ) {
-    return "Insufficient testnet TON for gas.";
+    return "Insufficient TON for gas.";
   }
 
   if (text.includes("wallet") && (text.includes("connect") || text.includes("not connected"))) {

@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
-import { ExternalLink, Loader2, Wallet } from "lucide-react";
-import { useUserProfile } from "@/lib/hooks";
+import { Check, Copy, ExternalLink, Loader2, Wallet } from "lucide-react";
+import { useUserProfile, useWalletBalance } from "@/lib/hooks";
 import { TokenCard } from "@/components/TokenCard";
 import { cn, formatPercent, formatTon, shortAddress, timeAgo } from "@/lib/utils";
+import { isExplorerSafeTxHash, tonviewerUrl } from "@/lib/explorer";
 import type { PortfolioHolding, ProfileLaunchPosition, Transaction, TxKind } from "@/lib/types";
 
 type Tab = "portfolio" | "created" | "contributions" | "history";
@@ -22,6 +23,14 @@ export default function ProfilePage() {
   const wallet = useTonAddress();
   const [tonConnectUI] = useTonConnectUI();
   const [tab, setTab] = useState<Tab>("portfolio");
+  const [copied, setCopied] = useState(false);
+  const { data: balance, isLoading: balanceLoading } = useWalletBalance(wallet);
+
+  async function copyWallet() {
+    await navigator.clipboard.writeText(wallet);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
 
   if (!wallet) {
     return (
@@ -47,9 +56,26 @@ export default function ProfilePage() {
   return (
     <div className="container-page py-10">
       <div className="mb-2 text-xs font-medium text-ink-500">Connected wallet</div>
-      <h1 className="font-display text-2xl font-bold text-ink-900 sm:text-3xl">
-        {shortAddress(wallet, 8, 6)}
-      </h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="font-display text-2xl font-bold text-ink-900 sm:text-3xl">
+          {shortAddress(wallet, 8, 6)}
+        </h1>
+        <button
+          type="button"
+          onClick={copyWallet}
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-2.5 text-xs font-semibold text-ink-600 ring-1 ring-ink-200 transition-colors hover:bg-ink-50"
+          aria-label="Copy wallet address"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <div className="mt-2 text-sm text-ink-500">
+        Balance:{" "}
+        <span className="font-mono font-semibold text-ink-800">
+          {balanceLoading ? "Loading..." : balance ? formatTon(balance.balanceTon, 2) : "Unavailable"}
+        </span>
+      </div>
 
       <div className="mt-6 flex gap-1.5 overflow-x-auto rounded-xl bg-ink-100 p-1">
         {TABS.map((t) => (
@@ -214,11 +240,7 @@ const TX_LABEL: Record<TxKind, { label: string; color: string }> = {
 
 function TxRow({ tx }: { tx: Transaction }) {
   const meta = TX_LABEL[tx.kind];
-  const explorer = tx.hash
-    ? `https://testnet.tonviewer.com/transaction/${encodeURIComponent(tx.hash)}`
-    : tx.relatedAddress
-      ? `https://testnet.tonviewer.com/${encodeURIComponent(tx.relatedAddress)}`
-      : `https://testnet.tonviewer.com/${encodeURIComponent(tx.wallet)}`;
+  const explorer = tonviewerUrl({ txHash: tx.hash, address: tx.relatedAddress ?? tx.wallet });
   return (
     <li className="flex items-center justify-between px-5 py-3">
       <div>
@@ -228,7 +250,7 @@ function TxRow({ tx }: { tx: Transaction }) {
         </div>
         <div className="text-xs text-ink-500">
           {tx.tokenName ? `${tx.tokenName} · ` : ""}
-          {timeAgo(tx.timestamp)} · {tx.hash ? shortAddress(tx.hash, 6, 4) : "Pending"}
+          {timeAgo(tx.timestamp)} · {isExplorerSafeTxHash(tx.hash) ? shortAddress(tx.hash!, 6, 4) : "Pending"}
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -254,6 +276,10 @@ function TxRow({ tx }: { tx: Transaction }) {
 
 function ContributionRow({ position }: { position: ProfileLaunchPosition }) {
   const tx = position.transaction;
+  const explorer = tonviewerUrl({
+    txHash: tx?.hash,
+    address: tx?.relatedAddress ?? position.launch.presalePoolAddress ?? position.launch.address,
+  });
   return (
     <li className="flex items-center justify-between gap-4 px-5 py-3">
       <Link href={`/token/${position.launch.id}`} className="min-w-0">
@@ -265,11 +291,22 @@ function ContributionRow({ position }: { position: ProfileLaunchPosition }) {
           {tx ? timeAgo(tx.timestamp) : "Position recorded"}
         </div>
       </Link>
-      <div className="text-right font-mono text-sm">
-        <div className="font-semibold text-ink-900">{formatTon(position.amountTon ?? tx?.amountTon ?? 0)}</div>
-        <div className="text-xs text-ink-500">
-          {(position.tokenAmount ?? tx?.amountToken ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} tokens
+      <div className="flex items-center gap-3">
+        <div className="text-right font-mono text-sm">
+          <div className="font-semibold text-ink-900">{formatTon(position.amountTon ?? tx?.amountTon ?? 0)}</div>
+          <div className="text-xs text-ink-500">
+            {(position.tokenAmount ?? tx?.amountToken ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} tokens
+          </div>
         </div>
+        <a
+          href={explorer}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="rounded-md p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ton-600"
+          aria-label="Open in Tonviewer"
+        >
+          <ExternalLink size={15} />
+        </a>
       </div>
     </li>
   );

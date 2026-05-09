@@ -27,7 +27,7 @@ Set `NEXT_PUBLIC_API_URL` to the hosted backend `/api` URL for live token discov
 
 ## Backend / Indexer
 
-The backend lives in `backend/` and provides launch persistence, token discovery, stats, profiles, transactions, upload hosting, metadata hosting, and TON testnet reconciliation.
+The backend lives in `backend/` and provides launch persistence, token discovery, stats, profiles, transactions, upload hosting, metadata hosting, and TON reconciliation.
 
 ```bash
 cp .env.example .env
@@ -40,12 +40,12 @@ Required backend env:
 
 ```bash
 DATABASE_URL=
-TONCENTER_ENDPOINT=https://testnet.toncenter.com/api/v2/jsonRPC
+TONCENTER_ENDPOINT=
 TONCENTER_API_KEY=
 FACTORY_ADDRESS=
 PLATFORM_TON_TREASURY=
 PLATFORM_TOKEN_TREASURY=
-NETWORK=testnet
+NETWORK=mainnet
 PORT=4000
 FRONTEND_ORIGIN=https://tonlaunchpad.vercel.app
 BACKEND_PUBLIC_URL=
@@ -100,14 +100,14 @@ npm run lint
 npm test
 ```
 
-## Testnet Deployment
+## Network Deployment
 
 ```bash
 npm install
 npm run contract:build
 export PLATFORM_TON_TREASURY=<platform-ton-treasury>
 export PLATFORM_TOKEN_TREASURY=<platform-token-treasury>
-npx blueprint run deployLaunchpad --testnet
+npx blueprint run deployLaunchpad
 ```
 
-Deploy `LaunchpadFactory`, then set the factory address in frontend and backend env.
+Deploy `LaunchpadFactory` for the target network, then set the factory address in frontend and backend env.
