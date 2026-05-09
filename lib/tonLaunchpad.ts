@@ -122,6 +122,14 @@ export function normalizeTonConnectError(err: unknown): string {
   const text = raw.toLowerCase();
 
   if (
+    text.includes("timed out") ||
+    text.includes("timeout") ||
+    text.includes("expired")
+  ) {
+    return "Wallet confirmation timed out. Please try again.";
+  }
+
+  if (
     text.includes("reject") ||
     text.includes("decline") ||
     text.includes("cancel") ||

@@ -25,7 +25,7 @@ export function TonConnectProvider({ children }: { children: React.ReactNode }) 
       return `${window.location.origin}/tonconnect-manifest.json`;
     }
     // SSR fallback. Replaced on mount.
-    return "https://tonpad.app/tonconnect-manifest.json";
+    return "https://tonlaunchpad.vercel.app/tonconnect-manifest.json";
   });
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSWRConfig } from "swr";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -22,11 +23,13 @@ export function PresalePanel({ token }: Props) {
   const presale = useEffectivePresale(token.presale);
   const wallet = useTonAddress();
   const [tonConnectUI] = useTonConnectUI();
+  const { mutate } = useSWRConfig();
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState<"contribute" | "claim" | "refund" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [poolMissingSince, setPoolMissingSince] = useState<number | null>(null);
+  const [lastContributeTx, setLastContributeTx] = useState<LaunchTxDebug | null>(null);
 
   const { data: myContrib, mutate: refreshContrib } = useMyContribution(
     token.id,
@@ -59,15 +62,19 @@ export function PresalePanel({ token }: Props) {
     }
   }, [poolReady, presale.status]);
 
-  async function send(boc: { to: string; amountNano: string; payload: string; validUntil: number }) {
-    return tonConnectUI.sendTransaction({
+  async function send(boc: LaunchTxDebug) {
+    const tx = {
       validUntil: boc.validUntil,
       messages: [{ address: boc.to, amount: boc.amountNano, payload: boc.payload }],
-    });
+    };
+    return withWalletTimeout(
+      tonConnectUI.sendTransaction(tx, { skipRedirectToWallet: "never" }),
+      60_000,
+    );
   }
 
   async function handleContribute() {
-    if (!wallet) {
+    if (!wallet || !tonConnectUI.connected) {
       tonConnectUI.openModal();
       return;
     }
@@ -97,21 +104,60 @@ export function PresalePanel({ token }: Props) {
     }
     setBusy("contribute");
     setError(null);
+    let attemptedTx: LaunchTxDebug | null = null;
     try {
       const boc = buildContributeTransaction(poolAddress, numAmount);
+      attemptedTx = boc;
+      setLastContributeTx(boc);
+      console.debug("[contribute] sendTransaction payload", {
+        wallet,
+        connected: tonConnectUI.connected,
+        walletDevice: tonConnectUI.wallet?.device,
+        walletName:
+          tonConnectUI.wallet && "name" in tonConnectUI.wallet
+            ? tonConnectUI.wallet.name
+            : undefined,
+        presalePoolAddress: poolAddress,
+        destination: boc.to,
+        amountTon: numAmount,
+        amountNano: boc.amountNano,
+        validUntil: boc.validUntil,
+        bodyPresent: !!boc.payload,
+        payload: boc.payload,
+      });
       const result = await send(boc);
+      console.debug("[contribute] sendTransaction result", result);
       setTxHash(result.boc);
-      void api.presale.recordContribution(token.id, {
+      api.presale.recordContribution(token.id, {
         wallet,
         amountTon: numAmount,
         tokenAmount: tokensReceived,
         txHash: result.boc,
         transactionBoc: result.boc,
-      }).catch((err) => console.warn("Contribution record unavailable; waiting for indexer.", err));
+      })
+        .then(() => {
+          void mutate(["token", token.id]);
+          void mutate(["txs", token.id, 25]);
+          void mutate(["profile", wallet]);
+          void mutate(["myContrib", token.id, wallet]);
+          void mutate(["stats"]);
+        })
+        .catch((err) => console.warn("Contribution record unavailable; waiting for indexer.", err));
       setAmount("");
       refreshContrib();
     } catch (err) {
-      console.error("Contribution transaction failed", err);
+      if (isWalletTimeout(err)) {
+        tonConnectUI.closeModal();
+      }
+      console.error("Contribution transaction failed", {
+        error: err,
+        wallet,
+        presalePoolAddress: poolAddress,
+        amountTon: numAmount,
+        amountNano: attemptedTx?.amountNano,
+        validUntil: attemptedTx?.validUntil,
+        bodyPresent: !!attemptedTx?.payload,
+      });
       setError(err instanceof ApiError ? err.message : normalizeTonConnectError(err));
     } finally {
       setBusy(null);
@@ -212,6 +258,7 @@ export function PresalePanel({ token }: Props) {
           busy={busy === "contribute"}
           onSubmit={handleContribute}
           endTime={presale.endTime}
+          debugTx={lastContributeTx ?? contributionDebugTx(token.presalePoolAddress, numAmount)}
         />
       )}
 
@@ -319,6 +366,7 @@ function ContributeForm(props: {
   busy: boolean;
   onSubmit: () => void;
   endTime: string;
+  debugTx: LaunchTxDebug | null;
 }) {
   return (
     <div className="space-y-3">
@@ -394,6 +442,15 @@ function ContributeForm(props: {
       <div className="text-center text-[11px] text-ink-500">
         Ends in <span className="font-medium text-ink-700">{timeUntil(props.endTime)}</span>
       </div>
+
+      {process.env.NODE_ENV !== "production" && (
+        <div className="space-y-1 rounded-lg bg-ink-50 p-3 font-mono text-[11px] text-ink-500 ring-1 ring-ink-100">
+          <div>Pool address: {props.debugTx?.to ?? "missing"}</div>
+          <div>Amount nanotons: {props.debugTx?.amountNano ?? "missing"}</div>
+          <div>Wallet connected: {props.wallet ? "yes" : "no"}</div>
+          <div>Tx body present: {props.debugTx?.payload ? "yes" : "no"}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -425,4 +482,43 @@ function labelForStatus(s: string) {
     default:
       return "Presale";
   }
+}
+
+type LaunchTxDebug = {
+  to: string;
+  amountNano: string;
+  payload: string;
+  validUntil: number;
+};
+
+function contributionDebugTx(poolAddress: string | null | undefined, amountTon: number) {
+  if (!poolAddress || !Number.isFinite(amountTon) || amountTon <= 0) return null;
+  try {
+    return buildContributeTransaction(poolAddress, amountTon);
+  } catch {
+    return null;
+  }
+}
+
+function withWalletTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error("Wallet confirmation timed out. Please try again.")),
+      timeoutMs,
+    );
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
+function isWalletTimeout(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("timed out");
 }
