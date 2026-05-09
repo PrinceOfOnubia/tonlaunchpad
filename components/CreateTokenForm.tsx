@@ -173,6 +173,48 @@ function trimZeros(s: string): string {
 }
 
 // =============================================================================
+// Allocation auto-balancer
+// Whenever one slider changes, the other two are re-distributed so the total
+// always sums to exactly 100. The other two keep their relative ratio when
+// possible; if both were at 0, the remainder is split evenly.
+// =============================================================================
+type AllocKey = "presale" | "liquidity" | "creator";
+
+function rebalanceAllocations(
+  current: { presale: number; liquidity: number; creator: number },
+  changed: AllocKey,
+  newValue: number,
+): { presale: number; liquidity: number; creator: number } {
+  const v = clamp(Math.round(newValue), 0, 100);
+  const remaining = 100 - v;
+  const others: AllocKey[] = (["presale", "liquidity", "creator"] as AllocKey[]).filter(
+    (k) => k !== changed,
+  );
+  const [a, b] = others;
+  const aOld = current[a];
+  const bOld = current[b];
+  const otherSum = aOld + bOld;
+
+  let aNew: number;
+  let bNew: number;
+  if (otherSum <= 0) {
+    // both at zero — split evenly
+    aNew = Math.floor(remaining / 2);
+    bNew = remaining - aNew;
+  } else {
+    aNew = Math.round((aOld / otherSum) * remaining);
+    bNew = remaining - aNew; // guarantees exact 100 total
+  }
+
+  return {
+    ...current,
+    [changed]: v,
+    [a]: aNew,
+    [b]: bNew,
+  } as { presale: number; liquidity: number; creator: number };
+}
+
+// =============================================================================
 // PricingBreakdown — visible calculator panel rendered inside Step 3
 // =============================================================================
 function PricingBreakdown({
@@ -758,25 +800,34 @@ function StepAllocation(props: {
   const { data, patch, sum } = props;
   const ok = sum === 100;
   return (
-    <Section title="Token Allocation" subtitle="Must sum to exactly 100%">
+    <Section
+      title="Token Allocation"
+      subtitle="Sliders auto-balance to 100% — moving one rebalances the others"
+    >
       <div className="space-y-5">
         <AllocSlider
           label="Presale"
           color="bg-ton-500"
           value={data.allocations.presale}
-          onChange={(v) => patch("allocations", { presale: v })}
+          onChange={(v) =>
+            patch("allocations", rebalanceAllocations(data.allocations, "presale", v))
+          }
         />
         <AllocSlider
           label="Liquidity"
           color="bg-ton-300"
           value={data.allocations.liquidity}
-          onChange={(v) => patch("allocations", { liquidity: v })}
+          onChange={(v) =>
+            patch("allocations", rebalanceAllocations(data.allocations, "liquidity", v))
+          }
         />
         <AllocSlider
           label="Creator"
           color="bg-ton-700"
           value={data.allocations.creator}
-          onChange={(v) => patch("allocations", { creator: v })}
+          onChange={(v) =>
+            patch("allocations", rebalanceAllocations(data.allocations, "creator", v))
+          }
         />
       </div>
 
