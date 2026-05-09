@@ -3,6 +3,7 @@ import { TonClient } from "@ton/ton";
 import { config } from "./config";
 import { prisma } from "./db";
 import { computeStatus } from "./mappers";
+import { addressVariants } from "./address";
 
 export function startIndexer() {
   if (!config.indexerEnabled) {
@@ -56,13 +57,26 @@ class TonpadIndexer {
         const tokenMasterAddress = tuple.readAddress().toString();
         const presalePoolAddress = tuple.readAddress().toString();
         const creatorWallet = tuple.readAddress().toString();
+        const poolVariants = addressVariants(presalePoolAddress);
+        const tokenVariants = addressVariants(tokenMasterAddress);
+        const creatorVariants = addressVariants(creatorWallet);
 
         const discoveredAt = new Date();
-        const existingByPool = await prisma.launch.findUnique({ where: { presalePoolAddress } });
+        const existingByPool = await prisma.launch.findFirst({
+          where: {
+            OR: [
+              { presalePoolAddress: { in: poolVariants } },
+              { tokenMasterAddress: { in: tokenVariants } },
+            ],
+          },
+        });
         const optimistic =
           existingByPool ??
           (await prisma.launch.findFirst({
-            where: { creatorWallet, presalePoolAddress: null },
+            where: {
+              creatorWallet: { in: creatorVariants },
+              presalePoolAddress: null,
+            },
             orderBy: { createdAt: "desc" },
           }));
 
@@ -80,6 +94,8 @@ class TonpadIndexer {
           });
           console.log("[indexer] reconciled launch", {
             id: optimistic.id,
+            txHash: optimistic.txHash,
+            creatorWallet,
             presalePoolAddress,
             tokenMasterAddress,
           });

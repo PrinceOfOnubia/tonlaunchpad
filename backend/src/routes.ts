@@ -8,6 +8,7 @@ import { prisma } from "./db";
 import { reconcileFactoryLaunches } from "./indexer";
 import { computeStatus, launchToToken, txToApi } from "./mappers";
 import { createLaunchSchema, listQuerySchema, tonAddressSchema } from "./validation";
+import { addressVariants, canonicalAddress } from "./address";
 
 export const router = Router();
 mkdirSync(config.uploadDir, { recursive: true });
@@ -123,12 +124,15 @@ router.get("/api/launches", async (req, res, next) => {
 
 router.get("/api/launches/:id", async (req, res, next) => {
   try {
+    const idAddressVariants = addressVariants(req.params.id);
     let launch = await prisma.launch.findFirst({
       where: {
         OR: [
           { id: req.params.id },
           { tokenMasterAddress: req.params.id },
           { presalePoolAddress: req.params.id },
+          { tokenMasterAddress: { in: idAddressVariants } },
+          { presalePoolAddress: { in: idAddressVariants } },
           { txHash: req.params.id },
         ],
       },
@@ -141,6 +145,7 @@ router.get("/api/launches/:id", async (req, res, next) => {
           (await prisma.launch.findUnique({ where: { id: launch.id } })) ?? launch;
         console.log("[api] launch reconciliation check", {
           id: launch.id,
+          txHash: launch.txHash,
           presalePoolAddress: launch.presalePoolAddress,
           tokenMasterAddress: launch.tokenMasterAddress,
         });
@@ -152,6 +157,12 @@ router.get("/api/launches/:id", async (req, res, next) => {
     const contributors = await prisma.transaction.groupBy({
       by: ["walletAddress"],
       where: { launchId: launch.id, type: "contribute" },
+    });
+    console.log("[api] GET /api/launches/:id returning", {
+      id: launch.id,
+      txHash: launch.txHash,
+      presalePoolAddress: launch.presalePoolAddress,
+      tokenMasterAddress: launch.tokenMasterAddress,
     });
     res.json({
       ...launchToToken(launch),
@@ -165,14 +176,20 @@ router.get("/api/launches/:id", async (req, res, next) => {
 router.post("/api/launches", async (req, res, next) => {
   try {
     const body = createLaunchSchema.parse(req.body);
-    const creatorWallet = body.creatorWallet ?? body.creator;
-    if (!creatorWallet) return res.status(400).json({ message: "creatorWallet is required" });
+    const creatorWalletInput = body.creatorWallet ?? body.creator;
+    if (!creatorWalletInput) return res.status(400).json({ message: "creatorWallet is required" });
+    const creatorWallet = canonicalAddress(creatorWalletInput);
+    const tokenMasterAddress = body.tokenMasterAddress ? canonicalAddress(body.tokenMasterAddress) : null;
+    const presalePoolAddress = body.presalePoolAddress ? canonicalAddress(body.presalePoolAddress) : null;
     console.log("[api] POST /api/launches received", {
       name: body.name,
       symbol: body.symbol,
       creatorWallet,
-      hasPool: !!body.presalePoolAddress,
-      hasToken: !!body.tokenMasterAddress,
+      txHash: body.txHash,
+      presalePoolAddress,
+      tokenMasterAddress,
+      hasPool: !!presalePoolAddress,
+      hasToken: !!tokenMasterAddress,
       hasTxHash: !!body.txHash,
       hasBoc: !!body.transactionBoc,
     });
@@ -200,8 +217,8 @@ router.post("/api/launches", async (req, res, next) => {
         metadataUrl: body.metadataUrl ?? null,
         creatorWallet,
         factoryAddress,
-        tokenMasterAddress: body.tokenMasterAddress ?? null,
-        presalePoolAddress: body.presalePoolAddress ?? null,
+        tokenMasterAddress,
+        presalePoolAddress,
         txHash: body.txHash,
         softCap: body.presale.softCap,
         hardCap: body.presale.hardCap,
@@ -222,15 +239,16 @@ router.post("/api/launches", async (req, res, next) => {
         platformTonFeeBps,
         platformTokenFeeBps,
         social: body.social,
-        pendingIndexing: !(body.tokenMasterAddress && body.presalePoolAddress),
+        pendingIndexing: !(tokenMasterAddress && presalePoolAddress),
       },
       update: {
         logoUrl: body.logoUrl ?? body.imageUrl ?? undefined,
         metadataUrl: body.metadataUrl ?? undefined,
-        tokenMasterAddress: body.tokenMasterAddress ?? undefined,
-        presalePoolAddress: body.presalePoolAddress ?? undefined,
+        creatorWallet,
+        tokenMasterAddress: tokenMasterAddress ?? undefined,
+        presalePoolAddress: presalePoolAddress ?? undefined,
         pendingIndexing:
-          body.tokenMasterAddress && body.presalePoolAddress ? false : undefined,
+          tokenMasterAddress && presalePoolAddress ? false : undefined,
         status,
         platformTonTreasury: platformTonTreasury ?? undefined,
         platformTokenTreasury: platformTokenTreasury ?? undefined,
@@ -241,8 +259,17 @@ router.post("/api/launches", async (req, res, next) => {
     });
 
     if (launch.pendingIndexing || !launch.presalePoolAddress) {
+      scheduleLaunchReconciliation(launch.id, launch.txHash);
       void reconcileFactoryLaunches()
-        .then(() => console.log("[api] async launch reconciliation requested", { id: launch.id, txHash: launch.txHash }))
+        .then(async () => {
+          const updated = await prisma.launch.findUnique({ where: { id: launch.id } });
+          console.log("[api] async launch reconciliation requested", {
+            id: launch.id,
+            txHash: launch.txHash,
+            detectedPoolAddress: updated?.presalePoolAddress ?? null,
+            detectedTokenMasterAddress: updated?.tokenMasterAddress ?? null,
+          });
+        })
         .catch((err) => console.warn("[api] async launch reconciliation failed", err));
     }
 
@@ -264,6 +291,9 @@ router.post("/api/launches", async (req, res, next) => {
     console.log("[api] POST /api/launches saved", {
       id: launch.id,
       symbol: launch.symbol,
+      txHash: launch.txHash,
+      presalePoolAddress: launch.presalePoolAddress,
+      tokenMasterAddress: launch.tokenMasterAddress,
       pendingIndexing: launch.pendingIndexing,
     });
     res.status(201).json(launchToToken(launch));
@@ -298,14 +328,15 @@ router.get("/api/stats", async (_req, res, next) => {
 router.get("/api/profile/:wallet", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(req.params.wallet);
+    const walletVariants = addressVariants(wallet);
     const data = await safeDb(
       () =>
         Promise.all([
-          prisma.launch.findMany({ where: { creatorWallet: wallet }, orderBy: { createdAt: "desc" } }),
-          prisma.holder.findMany({ where: { walletAddress: wallet, tokenBalance: { gt: 0 } }, include: { launch: true } }),
-          prisma.transaction.findMany({ where: { walletAddress: wallet }, include: { launch: true }, orderBy: { timestamp: "desc" }, take: 100 }),
+          prisma.launch.findMany({ where: { creatorWallet: { in: walletVariants } }, orderBy: { createdAt: "desc" } }),
+          prisma.holder.findMany({ where: { walletAddress: { in: walletVariants }, tokenBalance: { gt: 0 } }, include: { launch: true } }),
+          prisma.transaction.findMany({ where: { walletAddress: { in: walletVariants } }, include: { launch: true }, orderBy: { timestamp: "desc" }, take: 100 }),
           prisma.transaction.findMany({
-            where: { walletAddress: wallet, type: "contribute" },
+            where: { walletAddress: { in: walletVariants }, type: "contribute" },
             include: { launch: true },
             orderBy: { timestamp: "desc" },
           }),
@@ -399,10 +430,11 @@ router.get("/api/profile/:wallet", async (req, res, next) => {
 router.get("/api/transactions/:wallet", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(req.params.wallet);
+    const walletVariants = addressVariants(wallet);
     const transactions = await safeDb(
       () =>
         prisma.transaction.findMany({
-          where: { walletAddress: wallet },
+          where: { walletAddress: { in: walletVariants } },
           include: { launch: true },
           orderBy: { timestamp: "desc" },
           take: 100,
@@ -431,6 +463,8 @@ router.get("/api/tokens/:id/transactions", async (req, res, next) => {
           { id: req.params.id },
           { tokenMasterAddress: req.params.id },
           { presalePoolAddress: req.params.id },
+          { tokenMasterAddress: { in: addressVariants(req.params.id) } },
+          { presalePoolAddress: { in: addressVariants(req.params.id) } },
           { txHash: req.params.id },
         ],
       },
@@ -447,6 +481,90 @@ router.get("/api/tokens/:id/transactions", async (req, res, next) => {
     next(err);
   }
 });
+router.get("/api/tokens/:id/presale/contribution", async (req, res, next) => {
+  try {
+    const wallet = tonAddressSchema.parse(String(req.query.wallet ?? ""));
+    const launch = await findLaunchByIdOrAddress(req.params.id);
+    if (!launch) return res.status(404).json({ message: "Launch not found" });
+
+    const walletVariants = addressVariants(wallet);
+    const [contribution, claimed] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: { launchId: launch.id, walletAddress: { in: walletVariants }, type: "contribute" },
+        _sum: { amountTon: true, tokenAmount: true },
+      }),
+      prisma.transaction.findFirst({
+        where: { launchId: launch.id, walletAddress: { in: walletVariants }, type: "claim" },
+      }),
+    ]);
+    const amountTon = contribution._sum.amountTon ?? 0;
+    res.json({
+      amountTon,
+      tokensOwed: contribution._sum.tokenAmount ?? amountTon * launch.presaleRate,
+      claimed: !!claimed,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+router.post("/api/tokens/:id/presale/contribution", async (req, res, next) => {
+  try {
+    const launch = await findLaunchByIdOrAddress(req.params.id);
+    if (!launch) return res.status(404).json({ message: "Launch not found" });
+
+    const wallet = canonicalAddress(String(req.body?.wallet ?? ""));
+    const amountTon = Number(req.body?.amountTon ?? 0);
+    if (!Number.isFinite(amountTon) || amountTon <= 0) {
+      return res.status(400).json({ message: "amountTon must be greater than 0" });
+    }
+    const tokenAmount = Number(req.body?.tokenAmount ?? amountTon * launch.presaleRate);
+    const txHash = String(req.body?.txHash ?? req.body?.transactionBoc ?? `contribution-${launch.id}-${wallet}-${Date.now()}`);
+
+    const tx = await prisma.transaction.upsert({
+      where: { txHash },
+      create: {
+        launchId: launch.id,
+        walletAddress: wallet,
+        txHash,
+        type: "contribute",
+        amountTon,
+        tokenAmount: Number.isFinite(tokenAmount) ? tokenAmount : 0,
+      },
+      update: {
+        launchId: launch.id,
+        walletAddress: wallet,
+        amountTon,
+        tokenAmount: Number.isFinite(tokenAmount) ? tokenAmount : 0,
+      },
+    });
+    const raised = await prisma.transaction.aggregate({
+      where: { launchId: launch.id, type: "contribute" },
+      _sum: { amountTon: true },
+    });
+    const updated = await prisma.launch.update({
+      where: { id: launch.id },
+      data: {
+        raisedTon: raised._sum.amountTon ?? 0,
+        status: computeStatus({
+          ...launch,
+          raisedTon: raised._sum.amountTon ?? 0,
+        }),
+      },
+    });
+    await updateStatsCache();
+    console.log("[api] contribution recorded", {
+      launchId: launch.id,
+      txHash,
+      wallet,
+      amountTon,
+      raisedTon: updated.raisedTon,
+      presalePoolAddress: updated.presalePoolAddress,
+    });
+    res.status(201).json(txToApi({ ...tx, launch: updated }));
+  } catch (err) {
+    next(err);
+  }
+});
 router.get("/api/tokens/:id", (req, res, next) => {
   reroute(req, res, next, `/api/launches/${req.params.id}`);
 });
@@ -456,10 +574,11 @@ router.post("/api/tokens", (req, res, next) => {
 router.get("/api/users/:wallet/portfolio", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(req.params.wallet);
+    const walletVariants = addressVariants(wallet);
     const holders = await safeDb(
       () =>
         prisma.holder.findMany({
-          where: { walletAddress: wallet, tokenBalance: { gt: 0 } },
+          where: { walletAddress: { in: walletVariants }, tokenBalance: { gt: 0 } },
           include: { launch: true },
         }),
       [],
@@ -485,8 +604,9 @@ router.get("/api/users/:wallet/portfolio", async (req, res, next) => {
 router.get("/api/users/:wallet/created", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(req.params.wallet);
+    const walletVariants = addressVariants(wallet);
     const created = await safeDb(
-      () => prisma.launch.findMany({ where: { creatorWallet: wallet } }),
+      () => prisma.launch.findMany({ where: { creatorWallet: { in: walletVariants } } }),
       [],
     );
     res.json(created.map(launchToToken));
@@ -508,6 +628,41 @@ async function refreshStatuses() {
         : Promise.resolve(launch);
     }),
   );
+}
+
+function findLaunchByIdOrAddress(id: string) {
+  const variants = addressVariants(id);
+  return prisma.launch.findFirst({
+    where: {
+      OR: [
+        { id },
+        { tokenMasterAddress: id },
+        { presalePoolAddress: id },
+        { tokenMasterAddress: { in: variants } },
+        { presalePoolAddress: { in: variants } },
+        { txHash: id },
+      ],
+    },
+  });
+}
+
+function scheduleLaunchReconciliation(launchId: string, txHash: string | null) {
+  for (const delayMs of [2_000, 5_000, 10_000, 20_000]) {
+    setTimeout(() => {
+      void reconcileFactoryLaunches()
+        .then(async () => {
+          const launch = await prisma.launch.findUnique({ where: { id: launchId } });
+          console.log("[api] scheduled launch reconciliation", {
+            launchId,
+            txHash,
+            detectedPoolAddress: launch?.presalePoolAddress ?? null,
+            detectedTokenMasterAddress: launch?.tokenMasterAddress ?? null,
+            pendingIndexing: launch?.pendingIndexing ?? null,
+          });
+        })
+        .catch((err) => console.warn("[api] scheduled launch reconciliation failed", { launchId, txHash, err }));
+    }, delayMs).unref();
+  }
 }
 
 async function contributorCountByLaunch(launchIds: string[]) {

@@ -100,7 +100,7 @@ export type TxKind = "launch" | "contribute" | "claim" | "refund" | "treasury" |
 
 export interface Transaction {
   id: string;
-  hash: string;
+  hash?: string | null;
   kind: TxKind;
   amountTon: number;
   amountToken: number;

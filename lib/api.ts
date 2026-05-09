@@ -169,6 +169,18 @@ export const api = {
         `/tokens/${encodeURIComponent(tokenId)}/presale/contribution`,
         { query: { wallet }, signal },
       ),
+
+    recordContribution: (tokenId: string, payload: {
+      wallet: string;
+      amountTon: number;
+      tokenAmount: number;
+      txHash?: string;
+      transactionBoc?: string;
+    }) =>
+      request<Transaction>(`/tokens/${encodeURIComponent(tokenId)}/presale/contribution`, {
+        method: "POST",
+        body: payload,
+      }),
   },
 
   stats: {

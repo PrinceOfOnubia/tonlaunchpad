@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, AtSign, ExternalLink, Globe, Loader2, Send } from "lucide-react";
@@ -17,6 +17,16 @@ export default function TokenPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const { data: token, isLoading, error } = useToken(id);
+
+  useEffect(() => {
+    if (token) {
+      console.debug("[token-page] received pool address", {
+        id: token.id,
+        presalePoolAddress: token.presalePoolAddress ?? null,
+        tokenMasterAddress: token.address ?? null,
+      });
+    }
+  }, [token]);
 
   if (isLoading) {
     return (
@@ -60,6 +70,11 @@ function TokenContent({ token }: { token: Token }) {
       </Link>
 
       <TokenHeader token={effectiveToken} />
+      {process.env.NODE_ENV !== "production" && (
+        <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 font-mono text-xs text-ink-500 ring-1 ring-ink-100">
+          Pool: {effectiveToken.presalePoolAddress || "missing"}
+        </div>
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">

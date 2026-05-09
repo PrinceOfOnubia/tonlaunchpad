@@ -66,7 +66,7 @@ export function launchToToken(launch: Launch) {
 export function txToApi(tx: TransactionWithLaunch) {
   return {
     id: tx.id,
-    hash: tx.txHash,
+    hash: explorerSafeHash(tx.txHash),
     kind: tx.type,
     amountTon: tx.amountTon,
     amountToken: tx.tokenAmount,
@@ -77,6 +77,13 @@ export function txToApi(tx: TransactionWithLaunch) {
     tokenSymbol: tx.launch?.symbol,
     relatedAddress: tx.launch?.presalePoolAddress ?? tx.launch?.tokenMasterAddress ?? tx.launch?.creatorWallet,
   };
+}
+
+function explorerSafeHash(value: string) {
+  if (value.startsWith("te6") || value.startsWith("contribution-") || value.length > 160) {
+    return null;
+  }
+  return value;
 }
 
 function asSocial(value: unknown) {

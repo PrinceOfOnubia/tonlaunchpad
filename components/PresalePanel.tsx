@@ -86,6 +86,13 @@ export function PresalePanel({ token }: Props) {
       const boc = buildContributeTransaction(poolAddress, numAmount);
       const result = await send(boc);
       setTxHash(result.boc);
+      void api.presale.recordContribution(token.id, {
+        wallet,
+        amountTon: numAmount,
+        tokenAmount: tokensReceived,
+        txHash: result.boc,
+        transactionBoc: result.boc,
+      }).catch((err) => console.warn("Contribution record unavailable; waiting for indexer.", err));
       setAmount("");
       refreshContrib();
     } catch (err) {
