@@ -39,6 +39,13 @@ const STEPS: { title: string; subtitle: string }[] = [
   { title: "Review", subtitle: "Confirm & deploy" },
 ];
 
+/**
+ * Total supply is fixed by the platform — every launched token gets exactly
+ * 1B units. Set here as a single source of truth; the form treats this as
+ * read-only.
+ */
+const FIXED_TOTAL_SUPPLY = 1_000_000_000;
+
 const initialPayload = (): CreateTokenPayload => {
   const now = new Date();
   const start = new Date(now.getTime() + 60 * 60 * 1000); // +1h
@@ -48,7 +55,7 @@ const initialPayload = (): CreateTokenPayload => {
     symbol: "",
     description: "",
     imageUrl: null,
-    totalSupply: 1_000_000_000,
+    totalSupply: FIXED_TOTAL_SUPPLY,
     decimals: 9,
     allocations: { presale: 50, liquidity: 30, creator: 20 },
     presale: {
@@ -719,13 +726,13 @@ function StepIdentity(props: {
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Total supply" required>
+        <Field label="Total supply" hint="Fixed at 1,000,000,000 by the platform">
           <input
-            type="number"
-            value={data.totalSupply}
-            onChange={(e) => update("totalSupply", Number(e.target.value))}
-            min={1}
-            className="input-base font-mono"
+            type="text"
+            value={data.totalSupply.toLocaleString("en-US")}
+            readOnly
+            disabled
+            className="input-base font-mono cursor-not-allowed bg-ink-50 text-ink-500"
           />
         </Field>
         <Field label="Decimals" hint="Standard is 9 for TON jettons">
