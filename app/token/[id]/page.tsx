@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, AtSign, ExternalLink, Globe, Loader2, Send } from "lucide-react";
+import { ArrowLeft, AtSign, ExternalLink, Globe, Loader2, Send, Youtube, Github, Music2 } from "lucide-react";
 import { useToken } from "@/lib/hooks";
 import { cn, formatCompact, formatPercent, formatPrice, formatTon, shortAddress } from "@/lib/utils";
 import { TokenChart } from "@/components/TokenChart";
@@ -105,10 +105,25 @@ function TokenContent({ token }: { token: Token }) {
 function TokenHeader({ token }: { token: Token }) {
   const positive = token.priceChange24h >= 0;
   const [imageFailed, setImageFailed] = useState(false);
+  const [bannerFailed, setBannerFailed] = useState(false);
   const initials = (token.symbol || "TK").slice(0, 2).toUpperCase();
 
   return (
-    <div className="glass p-5 sm:p-6">
+    <div className="glass overflow-hidden">
+      {/* Banner — uploaded cover, or subtle gradient fallback */}
+      {token.bannerUrl && !bannerFailed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={token.bannerUrl}
+          alt=""
+          onError={() => setBannerFailed(true)}
+          className="h-32 w-full object-cover sm:h-40"
+        />
+      ) : (
+        <div className="h-32 w-full bg-gradient-to-br from-ton-100 via-ton-50 to-white sm:h-40" />
+      )}
+
+      <div className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start gap-4">
         {token.imageUrl && !imageFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -179,6 +194,36 @@ function TokenHeader({ token }: { token: Token }) {
                 <Send size={13} /> Telegram
               </a>
             )}
+            {token.social.youtube && (
+              <a
+                href={normalizeUrl(token.social.youtube)}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1 text-ink-500 hover:text-ton-600"
+              >
+                <Youtube size={13} /> YouTube
+              </a>
+            )}
+            {token.social.tiktok && (
+              <a
+                href={normalizeUrl(token.social.tiktok)}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1 text-ink-500 hover:text-ton-600"
+              >
+                <Music2 size={13} /> TikTok
+              </a>
+            )}
+            {token.social.github && (
+              <a
+                href={normalizeUrl(token.social.github)}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1 text-ink-500 hover:text-ton-600"
+              >
+                <Github size={13} /> GitHub
+              </a>
+            )}
           </div>
         </div>
 
@@ -196,8 +241,15 @@ function TokenHeader({ token }: { token: Token }) {
           </div>
         )}
       </div>
+      </div>
     </div>
   );
+}
+
+/** Add https:// when user enters a bare domain like "youtube.com/@x". */
+function normalizeUrl(input: string): string {
+  if (/^https?:\/\//i.test(input)) return input;
+  return `https://${input.replace(/^\/+/, "")}`;
 }
 
 function Stat({
