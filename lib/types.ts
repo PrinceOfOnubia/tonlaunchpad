@@ -42,6 +42,9 @@ export interface SocialLinks {
   website?: string;
   twitter?: string;
   telegram?: string;
+  youtube?: string;
+  tiktok?: string;
+  github?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -60,6 +63,8 @@ export interface Token {
   symbol: string;
   description: string;
   imageUrl: string | null;
+  /** Wide cover image displayed on cards & detail header. Optional. */
+  bannerUrl?: string | null;
 
   totalSupply: number;
   decimals: number;
@@ -179,6 +184,8 @@ export interface CreateTokenPayload {
   symbol: string;
   description: string;
   imageUrl: string | null;
+  /** Optional wide cover image. Same upload endpoint as logo. */
+  bannerUrl?: string | null;
   metadataUrl?: string | null;
   totalSupply: number;
   decimals: number;
