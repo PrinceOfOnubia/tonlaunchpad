@@ -45,6 +45,7 @@ TONCENTER_API_KEY=
 FACTORY_ADDRESS=
 PLATFORM_TON_TREASURY=
 PLATFORM_TOKEN_TREASURY=
+LIQUIDITY_TREASURY=
 NETWORK=mainnet
 PORT=4000
 FRONTEND_ORIGIN=https://tonlaunchpad.vercel.app
@@ -75,15 +76,17 @@ Compiled from `contracts/Launchpad.tact`:
 - `LaunchpadJettonMaster`: TEP-74 compatible Jetton master.
 - `JettonWallet`: deterministic TEP-74 compatible Jetton wallet.
 - `PresalePool`: accepts contributions, enforces caps/windows, handles user claims, refunds, failed-token recovery, and creator treasury claims.
+- Factory fee rates are snapshotted per presale. Treasury wallet routing is resolved dynamically through the factory when unpaid fees and manual-liquidity allocations are routed.
 
 ## Presale Flow
 
 1. Creator submits `LaunchToken` to `LaunchpadFactory`.
 2. Factory deploys Jetton master and pool.
 3. Factory mints:
-   - `99%` of the presale allocation to the pool for buyers.
-   - `1%` of the presale allocation to the platform treasury.
-   - creator allocation plus manual-liquidity allocation to the creator.
+   - buyer presale allocation to the pool for contributors.
+   - `1%` of total token supply, split between platform treasury wallets after success.
+   - manual-liquidity allocation to the pool until success.
+   - creator allocation to the creator.
 4. Users contribute TON while the sale is live.
 5. If `totalRaised >= softCap`, users can claim Jettons directly from the pool.
 6. Creator calls `CreatorClaimTreasury` or `WithdrawTreasury`.

@@ -10,18 +10,21 @@ import { buildContributeTransaction } from '../lib/tonLaunchpad';
 
 const DAY = 24 * 60 * 60;
 const TOTAL_SUPPLY = 1_000_000_000_000_000_000n;
-const PRESALE_ALLOCATION = 500_000_000_000_000_000n;
-const PLATFORM_TOKEN_FEE = 5_000_000_000_000_000n;
-const BUYER_ALLOCATION = 495_000_000_000_000_000n;
-const LIQUIDITY_ALLOCATION = 300_000_000_000_000_000n;
-const CREATOR_ALLOCATION = 200_000_000_000_000_000n;
-const CREATOR_MANAGED_ALLOCATION = LIQUIDITY_ALLOCATION + CREATOR_ALLOCATION;
+const PLATFORM_TOKEN_FEE = 10_000_000_000_000_000n;
+const PLATFORM_TOKEN_SHARE = 5_000_000_000_000_000n;
+const ALLOCATABLE_SUPPLY = TOTAL_SUPPLY - PLATFORM_TOKEN_FEE;
+const PRESALE_ALLOCATION = 495_000_000_000_000_000n;
+const BUYER_ALLOCATION = PRESALE_ALLOCATION;
+const LIQUIDITY_ALLOCATION = 297_000_000_000_000_000n;
+const CREATOR_ALLOCATION = 198_000_000_000_000_000n;
+const POOL_INITIAL_TOKEN_BALANCE = BUYER_ALLOCATION + PLATFORM_TOKEN_FEE + LIQUIDITY_ALLOCATION;
 
 type Fixture = {
   blockchain: Blockchain;
   owner: SandboxContract<TreasuryContract>;
   platformTonTreasury: SandboxContract<TreasuryContract>;
   platformTokenTreasury: SandboxContract<TreasuryContract>;
+  liquidityTreasury: SandboxContract<TreasuryContract>;
   creator: SandboxContract<TreasuryContract>;
   treasury: SandboxContract<TreasuryContract>;
   user: SandboxContract<TreasuryContract>;
@@ -38,6 +41,7 @@ async function fixture(): Promise<Fixture> {
   const owner = await blockchain.treasury('platform');
   const platformTonTreasury = await blockchain.treasury('platform-ton');
   const platformTokenTreasury = await blockchain.treasury('platform-token');
+  const liquidityTreasury = await blockchain.treasury('liquidity');
   const creator = await blockchain.treasury('creator');
   const treasury = await blockchain.treasury('creator-treasury');
   const user = await blockchain.treasury('user');
@@ -53,6 +57,7 @@ async function fixture(): Promise<Fixture> {
     owner,
     platformTonTreasury,
     platformTokenTreasury,
+    liquidityTreasury,
     creator,
     treasury,
     user,
@@ -83,7 +88,7 @@ function launchConfig(f: Fixture, overrides: Partial<LaunchToken> = {}): LaunchT
     maxContribution: toNano('20'),
     startTime: BigInt(f.startTime),
     endTime: BigInt(f.endTime),
-    liquidityPercentOfRaised: 60n,
+    liquidityPercentOfRaised: 6000n,
     ...overrides,
   };
 }
@@ -135,23 +140,51 @@ describe('classic manual-liquidity launchpad flow', () => {
     expect(record.token.toString()).toBeTruthy();
   });
 
-  it('token allocations include 1% platform token fee and creator-managed liquidity', async () => {
+  it('token allocations reserve 1% of total supply for platform fees', async () => {
     const f = await fixture();
     const { token, pool, record } = await launch(f);
     const poolConfig = await pool.getGetConfig();
 
+    expect(ALLOCATABLE_SUPPLY).toEqual(990_000_000_000_000_000n);
     expect(poolConfig.presaleTokenAllocation).toEqual(PRESALE_ALLOCATION);
     expect(poolConfig.buyerTokenAllocation).toEqual(BUYER_ALLOCATION);
     expect(poolConfig.platformTokenFee).toEqual(PLATFORM_TOKEN_FEE);
+    expect(poolConfig.platformTokenFeeTonTreasuryShare).toEqual(PLATFORM_TOKEN_SHARE);
+    expect(poolConfig.platformTokenFeeTokenTreasuryShare).toEqual(PLATFORM_TOKEN_SHARE);
     expect(poolConfig.liquidityTokenAllocation).toEqual(LIQUIDITY_ALLOCATION);
-    expect(poolConfig.platformTonTreasury).toEqualAddress(f.platformTonTreasury.address);
-    expect(poolConfig.platformTokenTreasury).toEqualAddress(f.platformTokenTreasury.address);
     expect(poolConfig.platformTonFeeBps).toEqual(500n);
     expect(poolConfig.platformTokenFeeBps).toEqual(100n);
-    expect(await jettonBalance(f, token, record.pool)).toEqual(BUYER_ALLOCATION);
-    expect(await jettonBalance(f, token, f.platformTokenTreasury.address)).toEqual(PLATFORM_TOKEN_FEE);
-    expect(await jettonBalance(f, token, f.creator.address)).toEqual(CREATOR_MANAGED_ALLOCATION);
+    expect(await jettonBalance(f, token, record.pool)).toEqual(POOL_INITIAL_TOKEN_BALANCE);
+    expect(await jettonBalance(f, token, f.creator.address)).toEqual(CREATOR_ALLOCATION);
     expect((await token.getGetJettonData()).totalSupply).toEqual(TOTAL_SUPPLY);
+  });
+
+  it('platform token fee splits 50/50 and liquidity defaults to creator after success', async () => {
+    const f = await fixture();
+    const { token, pool } = await launch(f);
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('10'));
+    f.blockchain.now = f.endTime + 1;
+
+    await pool.send(f.user.getSender(), { value: toNano('0.5') }, { $$type: 'ClaimTokens' });
+
+    expect(await jettonBalance(f, token, f.platformTonTreasury.address)).toEqual(PLATFORM_TOKEN_SHARE);
+    expect(await jettonBalance(f, token, f.platformTokenTreasury.address)).toEqual(PLATFORM_TOKEN_SHARE);
+    expect(await jettonBalance(f, token, f.creator.address)).toEqual(CREATOR_ALLOCATION + LIQUIDITY_ALLOCATION);
+  });
+
+  it('liquidity treasury receives liquidity token allocation when set', async () => {
+    const f = await fixture();
+    await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdateLiquidityTreasury', newAddress: f.liquidityTreasury.address });
+    const { token, pool } = await launch(f);
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('10'));
+    f.blockchain.now = f.endTime + 1;
+
+    await pool.send(f.user.getSender(), { value: toNano('0.5') }, { $$type: 'ClaimTokens' });
+
+    expect(await jettonBalance(f, token, f.creator.address)).toEqual(CREATOR_ALLOCATION);
+    expect(await jettonBalance(f, token, f.liquidityTreasury.address)).toEqual(LIQUIDITY_ALLOCATION);
   });
 
   it('contribution before start fails and active contribution works', async () => {
@@ -196,7 +229,7 @@ describe('classic manual-liquidity launchpad flow', () => {
     expect((await pool.getGetState()).finalized).toBe(true);
   });
 
-  it('platform receives 5% TON fee and creator receives remaining treasury', async () => {
+  it('platform receives 5% TON fee and creator treasury excludes liquidity share', async () => {
     const f = await fixture();
     const { pool } = await launch(f);
     f.blockchain.now = f.startTime + 1;
@@ -204,15 +237,32 @@ describe('classic manual-liquidity launchpad flow', () => {
     await contribute(f, pool, f.user2, toNano('10'));
     f.blockchain.now = f.endTime + 1;
 
-    const claim = await pool.send(f.creator.getSender(), { value: toNano('0.05') }, { $$type: 'CreatorClaimTreasury' });
+    const claim = await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
     const state = await pool.getGetState();
 
     expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.platformTonTreasury.address, value: toNano('1'), success: true });
-    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.treasury.address, value: toNano('19'), success: true });
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.creator.address, value: toNano('12'), success: true });
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.treasury.address, value: toNano('7'), success: true });
     expect(state.platformTonFee).toEqual(toNano('1'));
-    expect(state.creatorClaimable).toEqual(toNano('19'));
+    expect(state.liquidityTon).toEqual(toNano('12'));
+    expect(state.creatorClaimable).toEqual(toNano('7'));
     expect(state.treasuryClaimed).toBe(true);
     expect(state.platformTonFeePaid).toBe(true);
+  });
+
+  it('liquidity treasury receives liquidity TON when set', async () => {
+    const f = await fixture();
+    await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdateLiquidityTreasury', newAddress: f.liquidityTreasury.address });
+    const { pool } = await launch(f);
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('20'));
+    f.blockchain.now = f.endTime + 1;
+
+    const claim = await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
+
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.platformTonTreasury.address, value: toNano('1'), success: true });
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.liquidityTreasury.address, value: toNano('12'), success: true });
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.treasury.address, value: toNano('7'), success: true });
   });
 
   it('creator cannot claim treasury twice or claim after failed presale', async () => {
@@ -222,7 +272,7 @@ describe('classic manual-liquidity launchpad flow', () => {
     await contribute(f, pool, f.user, toNano('10'));
     f.blockchain.now = f.endTime + 1;
 
-    await pool.send(f.creator.getSender(), { value: toNano('0.05') }, { $$type: 'CreatorClaimTreasury' });
+    await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
     const second = await pool.send(f.creator.getSender(), { value: toNano('0.05') }, { $$type: 'CreatorClaimTreasury' });
     expect(second.transactions).toHaveTransaction({ from: f.creator.address, to: pool.address, success: false });
 
@@ -247,6 +297,20 @@ describe('classic manual-liquidity launchpad flow', () => {
 
     expect(refund.transactions).toHaveTransaction({ from: pool.address, to: f.user.address, success: true });
     expect(second.transactions).toHaveTransaction({ from: f.user.address, to: pool.address, success: false });
+  });
+
+  it('failed presale token recovery returns pool-held tokens to creator without platform token fee', async () => {
+    const f = await fixture();
+    const { token, pool } = await launch(f);
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('2'));
+    f.blockchain.now = f.endTime + 1;
+
+    await pool.send(f.creator.getSender(), { value: toNano('0.5') }, { $$type: 'RecoverFailedTokens' });
+
+    expect(await jettonBalance(f, token, f.creator.address)).toEqual(
+      CREATOR_ALLOCATION + (POOL_INITIAL_TOKEN_BALANCE - 2_000_000_000_000_000n),
+    );
   });
 
   it('double claim fails and refund fails after success', async () => {
@@ -308,7 +372,7 @@ describe('classic manual-liquidity launchpad flow', () => {
     const tonOk = await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTonFeeBps', newFeeBps: 400n });
     const tokenOk = await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTokenFeeBps', newFeeBps: 50n });
     const tonTooHigh = await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTonFeeBps', newFeeBps: 501n });
-    const tokenTooHigh = await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTokenFeeBps', newFeeBps: 101n });
+    const tokenTooHigh = await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTokenFeeBps', newFeeBps: 501n });
     const config = await f.factory.getGetFactoryConfig();
 
     expect(tonOk.transactions).toHaveTransaction({ from: f.owner.address, to: f.factory.address, success: true });
@@ -319,7 +383,7 @@ describe('classic manual-liquidity launchpad flow', () => {
     expect(config.platformTokenFeeBps).toEqual(50n);
   });
 
-  it('presales snapshot fee settings and existing presales are unchanged after factory updates', async () => {
+  it('presales snapshot fee rates and route unpaid payouts to current treasury wallets', async () => {
     const f = await fixture();
     const first = await launch(f);
 
@@ -327,6 +391,7 @@ describe('classic manual-liquidity launchpad flow', () => {
     const updatedToken = await f.blockchain.treasury('updated-platform-token');
     await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTonTreasury', newAddress: updatedTon.address });
     await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTokenTreasury', newAddress: updatedToken.address });
+    await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdateLiquidityTreasury', newAddress: f.liquidityTreasury.address });
     await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTonFeeBps', newFeeBps: 250n });
     await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTokenFeeBps', newFeeBps: 50n });
 
@@ -343,15 +408,33 @@ describe('classic manual-liquidity launchpad flow', () => {
     const firstConfig = await first.pool.getGetConfig();
     const newConfig = await secondPool.getGetConfig();
 
-    expect(firstConfig.platformTonTreasury).toEqualAddress(f.platformTonTreasury.address);
-    expect(firstConfig.platformTokenTreasury).toEqualAddress(f.platformTokenTreasury.address);
     expect(firstConfig.platformTonFeeBps).toEqual(500n);
     expect(firstConfig.platformTokenFeeBps).toEqual(100n);
-    expect(newConfig.platformTonTreasury).toEqualAddress(updatedTon.address);
-    expect(newConfig.platformTokenTreasury).toEqualAddress(updatedToken.address);
     expect(newConfig.platformTonFeeBps).toEqual(250n);
     expect(newConfig.platformTokenFeeBps).toEqual(50n);
-    expect(newConfig.platformTokenFee).toEqual(2_500_000_000_000_000n);
+    expect(newConfig.platformTokenFee).toEqual(5_000_000_000_000_000n);
+
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, first.pool, f.user, toNano('20'));
+    await contribute(f, secondPool, f.user2, toNano('20'));
+    f.blockchain.now = f.endTime + 1;
+    const firstClaim = await first.pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
+    await secondPool.send(f.user2.getSender(), { value: toNano('0.5') }, { $$type: 'ClaimTokens' });
+
+    expect(firstClaim.transactions).toHaveTransaction({ from: first.pool.address, to: updatedTon.address, value: toNano('1'), success: true });
+    expect(firstClaim.transactions).toHaveTransaction({ from: first.pool.address, to: f.liquidityTreasury.address, value: toNano('12'), success: true });
+    expect(await jettonBalance(f, secondToken, updatedTon.address)).toEqual(2_500_000_000_000_000n);
     expect(await jettonBalance(f, secondToken, updatedToken.address)).toEqual(2_500_000_000_000_000n);
+  });
+
+  it('owner can pause and unpause new launches', async () => {
+    const f = await fixture();
+    await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'PauseNewLaunches' });
+    const denied = await f.factory.send(f.creator.getSender(), { value: toNano('1') }, launchConfig(f));
+    await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UnpauseNewLaunches' });
+    const allowed = await f.factory.send(f.creator.getSender(), { value: toNano('1') }, launchConfig(f));
+
+    expect(denied.transactions).toHaveTransaction({ from: f.creator.address, to: f.factory.address, success: false });
+    expect(allowed.transactions).toHaveTransaction({ from: f.creator.address, to: f.factory.address, success: true });
   });
 });

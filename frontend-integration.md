@@ -25,7 +25,7 @@ Fields:
 - `maxContribution: bigint` - nanotons
 - `startTime: bigint` - Unix seconds
 - `endTime: bigint` - Unix seconds
-- `liquidityPercentOfRaised: bigint` - informational manual-liquidity plan, 0 to 100
+- `liquidityPercentOfRaised: bigint` - manual-liquidity TON share in basis points, 0 to 10000
 
 Frontend must show this notice before wallet approval:
 
@@ -56,8 +56,8 @@ Frontend must show this notice before wallet approval:
 
 | Getter | Args | Returns |
 | --- | --- | --- |
-| `getConfig()` | none | Factory, creator, token, treasury, platform treasury, caps, times, allocations, platform token fee |
-| `getState()` | none | `totalRaised`, `totalSold`, `finalized`, `failed`, `cancelled`, `paused`, `treasuryClaimed`, `platformTonFeePaid`, `platformTonFee`, `creatorClaimable` |
+| `getConfig()` | none | Factory, creator, token, creator treasury, fee BPS snapshots, caps, times, allocations, platform token fee split |
+| `getState()` | none | `totalRaised`, `totalSold`, `finalized`, `failed`, `cancelled`, `paused`, `treasuryClaimed`, `platformTonFeePaid`, `platformTonFee`, `liquidityTon`, `creatorClaimable`, `tokenFeesRouted` |
 | `getContribution(user)` | `Address` | User contribution in nanotons |
 | `getClaimed(user)` | `Address` | Whether user has claimed |
 

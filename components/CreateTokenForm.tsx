@@ -1084,6 +1084,9 @@ function StepReview({
           <ReviewRow label="Presale" value={`${data.allocations.presale}%`} />
           <ReviewRow label="Liquidity" value={`${data.allocations.liquidity}%`} />
           <ReviewRow label="Creator" value={`${data.allocations.creator}%`} />
+          <p className="pt-2 text-xs text-ink-500">
+            Liquidity allocation is reserved for manual liquidity handling.
+          </p>
         </ReviewSection>
 
         <ReviewSection title="Presale">

@@ -88,8 +88,17 @@ export interface Token {
   platformFees?: {
     tonTreasury?: string | null;
     tokenTreasury?: string | null;
+    liquidityTreasury?: string | null;
     tonFeeBps: number;
     tokenFeeBps: number;
+    tokenFeeAmount?: number;
+    tokenFeeTonTreasuryShare?: number;
+    tokenFeeTokenTreasuryShare?: number;
+    liquidityTonAmount?: number;
+    creatorTreasuryAmount?: number;
+    payoutPlatformTonTreasury?: string | null;
+    payoutPlatformTokenTreasury?: string | null;
+    payoutLiquidityTreasury?: string | null;
   };
 }
 

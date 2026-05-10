@@ -211,8 +211,13 @@ router.post("/api/launches", async (req, res, next) => {
     const factoryAddress = body.factoryAddress ?? config.factoryAddress;
     const platformTonTreasury = (body.platformTonTreasury ?? config.platformTonTreasury) || null;
     const platformTokenTreasury = (body.platformTokenTreasury ?? config.platformTokenTreasury) || null;
+    const liquidityTreasury = (body.liquidityTreasury ?? config.liquidityTreasury) || null;
     const platformTonFeeBps = body.platformTonFeeBps ?? config.platformTonFeeBps;
     const platformTokenFeeBps = body.platformTokenFeeBps ?? config.platformTokenFeeBps;
+    const platformTokenFeeAmount = (body.totalSupply * platformTokenFeeBps) / 10_000;
+    const platformTokenFeeTonTreasuryShare = platformTokenFeeAmount / 2;
+    const platformTokenFeeTokenTreasuryShare =
+      platformTokenFeeAmount - platformTokenFeeTonTreasuryShare;
     const status = computeStatus({
       startTime: body.presale.startTime,
       endTime: body.presale.endTime,
@@ -250,8 +255,12 @@ router.post("/api/launches", async (req, res, next) => {
         creatorAllocation: body.allocations.creator,
         platformTonTreasury,
         platformTokenTreasury,
+        liquidityTreasury,
         platformTonFeeBps,
         platformTokenFeeBps,
+        platformTokenFeeAmount,
+        platformTokenFeeTonTreasuryShare,
+        platformTokenFeeTokenTreasuryShare,
         social: body.social,
         pendingIndexing: !(tokenMasterAddress && presalePoolAddress),
       },
@@ -266,8 +275,12 @@ router.post("/api/launches", async (req, res, next) => {
         status,
         platformTonTreasury: platformTonTreasury ?? undefined,
         platformTokenTreasury: platformTokenTreasury ?? undefined,
+        liquidityTreasury: liquidityTreasury ?? undefined,
         platformTonFeeBps,
         platformTokenFeeBps,
+        platformTokenFeeAmount,
+        platformTokenFeeTonTreasuryShare,
+        platformTokenFeeTokenTreasuryShare,
         social: body.social,
       },
     });
@@ -559,6 +572,11 @@ router.post("/api/tokens/:id/presale/contribution", async (req, res, next) => {
       where: { id: launch.id },
       data: {
         raisedTon: raised._sum.amountTon ?? 0,
+        liquidityTonAmount: ((raised._sum.amountTon ?? 0) * launch.liquidityPercent) / 100,
+        creatorTreasuryAmount:
+          (raised._sum.amountTon ?? 0) -
+          (((raised._sum.amountTon ?? 0) * launch.platformTonFeeBps) / 10_000) -
+          (((raised._sum.amountTon ?? 0) * launch.liquidityPercent) / 100),
         status: computeStatus({
           ...launch,
           raisedTon: raised._sum.amountTon ?? 0,

@@ -99,7 +99,7 @@ export function buildCreatorClaimTreasuryTransaction(poolAddress: string): Launc
   const body = beginCell().storeUint(CREATOR_CLAIM_TREASURY_OPCODE, 32).endCell();
   return {
     to: pool.toString(),
-    amountNano: toNano("0.05").toString(),
+    amountNano: toNano("1").toString(),
     payload: bytesToBase64(body.toBoc()),
     validUntil: getTonConnectValidUntil(),
   };
@@ -213,7 +213,7 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
     maxContribution: toNano(maxContribution.toString()),
     startTime,
     endTime,
-    liquidityPercentOfRaised: integerInRange(form.liquidityPercent, "Liquidity percent", 0, 100),
+    liquidityPercentOfRaised: integerInRange(form.liquidityPercent, "Liquidity percent", 0, 100) * 100,
   };
 }
 

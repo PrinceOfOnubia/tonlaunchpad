@@ -24,7 +24,7 @@ const PERCENT_DENOMINATOR: Int = 100;
 const DEFAULT_PLATFORM_TON_FEE_BPS: Int = 500;
 const DEFAULT_PLATFORM_TOKEN_FEE_BPS: Int = 100;
 const MAX_PLATFORM_TON_FEE_BPS: Int = 500;
-const MAX_PLATFORM_TOKEN_FEE_BPS: Int = 100;
+const MAX_PLATFORM_TOKEN_FEE_BPS: Int = 500;
 const TOKEN_TRANSFER_GAS: Int = 100000000;
 const DEPLOY_VALUE: Int = 50000000;
 const TOKEN_DEPLOY_VALUE: Int = 250000000;
@@ -93,6 +93,10 @@ message UpdatePlatformTokenTreasury {
     newAddress: Address;
 }
 
+message UpdateLiquidityTreasury {
+    newAddress: Address;
+}
+
 message UpdatePlatformTonFeeBps {
     newFeeBps: Int;
 }
@@ -103,6 +107,17 @@ message UpdatePlatformTokenFeeBps {
 
 message TransferOwnership {
     newOwner: Address;
+}
+
+message PauseNewLaunches {}
+message UnpauseNewLaunches {}
+message RequestTreasuries {}
+
+message CurrentTreasuries {
+    platformTonTreasury: Address;
+    platformTokenTreasury: Address;
+    liquidityTreasury: Address;
+    liquidityTreasurySet: Bool;
 }
 
 struct LaunchRecord {
@@ -146,7 +161,9 @@ struct PresaleState {
     treasuryClaimed: Bool;
     platformTonFeePaid: Bool;
     platformTonFee: Int;
+    liquidityTon: Int;
     creatorClaimable: Int;
+    tokenFeesRouted: Bool;
 }
 
 struct PresaleConfig {
@@ -154,8 +171,6 @@ struct PresaleConfig {
     creator: Address;
     token: Address;
     treasuryAddress: Address;
-    platformTonTreasury: Address;
-    platformTokenTreasury: Address;
     platformTonFeeBps: Int;
     platformTokenFeeBps: Int;
     presaleRate: Int;
@@ -169,6 +184,8 @@ struct PresaleConfig {
     presaleTokenAllocation: Int;
     buyerTokenAllocation: Int;
     platformTokenFee: Int;
+    platformTokenFeeTonTreasuryShare: Int;
+    platformTokenFeeTokenTreasuryShare: Int;
     liquidityTokenAllocation: Int;
 }
 
@@ -176,8 +193,11 @@ struct FactoryConfig {
     owner: Address;
     platformTonTreasury: Address;
     platformTokenTreasury: Address;
+    liquidityTreasury: Address;
+    liquidityTreasurySet: Bool;
     platformTonFeeBps: Int;
     platformTokenFeeBps: Int;
+    pauseNewLaunches: Bool;
     launchCount: Int;
 }
 
@@ -317,8 +337,6 @@ contract PresalePool with Deployable {
     creator: Address;
     token: Address;
     treasuryAddress: Address;
-    platformTonTreasury: Address;
-    platformTokenTreasury: Address;
     platformTonFeeBps: Int;
     platformTokenFeeBps: Int;
     presaleRate: Int;
@@ -342,6 +360,7 @@ contract PresalePool with Deployable {
     paused: Bool;
     treasuryClaimed: Bool;
     platformTonFeePaid: Bool;
+    tokenFeesRouted: Bool;
     failedTokensRecovered: Bool;
     userContribution: map<Address, Int>;
     userClaimed: map<Address, Bool>;
@@ -352,8 +371,6 @@ contract PresalePool with Deployable {
         creator: Address,
         token: Address,
         treasuryAddress: Address,
-        platformTonTreasury: Address,
-        platformTokenTreasury: Address,
         platformTonFeeBps: Int,
         platformTokenFeeBps: Int,
         presaleRate: Int,
@@ -373,17 +390,15 @@ contract PresalePool with Deployable {
         throwUnless(ERR_BAD_CAPS, softCap <= hardCap);
         throwUnless(ERR_BAD_CAPS, minContribution <= maxContribution);
         throwUnless(ERR_BAD_TIME, startTime < endTime);
-        throwUnless(ERR_BAD_ALLOCATION, liquidityPercentOfRaised <= 100);
+        throwUnless(ERR_BAD_ALLOCATION, liquidityPercentOfRaised <= BPS_DENOMINATOR);
         throwUnless(ERR_BAD_CAPS, platformTonFeeBps <= MAX_PLATFORM_TON_FEE_BPS);
         throwUnless(ERR_BAD_CAPS, platformTokenFeeBps <= MAX_PLATFORM_TOKEN_FEE_BPS);
-        throwUnless(ERR_BAD_ALLOCATION, buyerTokenAllocation + platformTokenFee == presaleTokenAllocation);
+        throwUnless(ERR_BAD_ALLOCATION, buyerTokenAllocation == presaleTokenAllocation);
 
         self.factory = factory;
         self.creator = creator;
         self.token = token;
         self.treasuryAddress = treasuryAddress;
-        self.platformTonTreasury = platformTonTreasury;
-        self.platformTokenTreasury = platformTokenTreasury;
         self.platformTonFeeBps = platformTonFeeBps;
         self.platformTokenFeeBps = platformTokenFeeBps;
         self.presaleRate = presaleRate;
@@ -407,6 +422,7 @@ contract PresalePool with Deployable {
         self.paused = false;
         self.treasuryClaimed = false;
         self.platformTonFeePaid = false;
+        self.tokenFeesRouted = false;
         self.failedTokensRecovered = false;
     }
 
@@ -452,6 +468,7 @@ contract PresalePool with Deployable {
 
         self.finalized = true;
         self.userClaimed.set(ctx.sender, true);
+        self.requestTreasuryRouting();
         send(SendParameters{
             to: self.poolWallet(),
             value: TOKEN_TRANSFER_GAS,
@@ -500,7 +517,7 @@ contract PresalePool with Deployable {
             bounce: true,
             body: JettonTransfer{
                 queryId: 0,
-                amount: self.buyerTokenAllocation - self.totalSold,
+                amount: self.buyerTokenAllocation - self.totalSold + self.platformTokenFee + self.liquidityTokenAllocation,
                 destination: self.creator,
                 responseDestination: null,
                 customPayload: null,
@@ -526,21 +543,23 @@ contract PresalePool with Deployable {
         self.finalized = true;
         self.treasuryClaimed = true;
         let platformFee: Int = self.platformTonFee();
-        let creatorAmount: Int = self.totalRaised - platformFee;
-        self.platformTonFeePaid = true;
+        let liquidityAmount: Int = self.liquidityTon();
+        let creatorAmount: Int = self.totalRaised - platformFee - liquidityAmount;
 
-        send(SendParameters{
-            to: self.platformTonTreasury,
-            value: platformFee,
-            mode: SendPayGasSeparately + SendIgnoreErrors,
-            bounce: false
-        });
         send(SendParameters{
             to: self.treasuryAddress,
             value: creatorAmount,
             mode: SendPayGasSeparately + SendIgnoreErrors,
             bounce: false
         });
+        self.requestTreasuryRouting();
+    }
+
+    receive(msg: CurrentTreasuries) {
+        throwUnless(ERR_NOT_FACTORY, context().sender == self.factory);
+        throwUnless(ERR_SOFT_CAP_NOT_MET, self.isSuccessful());
+        self.routeTokenFees(msg);
+        self.routeTonFees(msg);
     }
 
     receive(_: Pause) {
@@ -565,6 +584,118 @@ contract PresalePool with Deployable {
 
     fun platformTonFee(): Int {
         return (self.totalRaised * self.platformTonFeeBps) / BPS_DENOMINATOR;
+    }
+
+    fun liquidityTon(): Int {
+        return (self.totalRaised * self.liquidityPercentOfRaised) / BPS_DENOMINATOR;
+    }
+
+    fun platformTokenFeeTonTreasuryShare(): Int {
+        return self.platformTokenFee / 2;
+    }
+
+    fun platformTokenFeeTokenTreasuryShare(): Int {
+        return self.platformTokenFee - self.platformTokenFeeTonTreasuryShare();
+    }
+
+    fun liquidityReceiver(msg: CurrentTreasuries): Address {
+        if (msg.liquidityTreasurySet) {
+            return msg.liquidityTreasury;
+        }
+        return self.creator;
+    }
+
+    fun requestTreasuryRouting() {
+        send(SendParameters{
+            to: self.factory,
+            value: DEPLOY_VALUE,
+            mode: SendPayGasSeparately + SendIgnoreErrors,
+            bounce: true,
+            body: RequestTreasuries{}.toCell()
+        });
+    }
+
+    fun routeTonFees(msg: CurrentTreasuries) {
+        if (self.treasuryClaimed && !self.platformTonFeePaid) {
+            self.platformTonFeePaid = true;
+            let platformFee: Int = self.platformTonFee();
+            let liquidityAmount: Int = self.liquidityTon();
+            if (platformFee > 0) {
+                send(SendParameters{
+                    to: msg.platformTonTreasury,
+                    value: platformFee,
+                    mode: SendPayGasSeparately + SendIgnoreErrors,
+                    bounce: false
+                });
+            }
+            if (liquidityAmount > 0) {
+                send(SendParameters{
+                    to: self.liquidityReceiver(msg),
+                    value: liquidityAmount,
+                    mode: SendPayGasSeparately + SendIgnoreErrors,
+                    bounce: false
+                });
+            }
+        }
+    }
+
+    fun routeTokenFees(msg: CurrentTreasuries) {
+        if (!self.tokenFeesRouted) {
+            self.tokenFeesRouted = true;
+            let tonTreasuryShare: Int = self.platformTokenFeeTonTreasuryShare();
+            let tokenTreasuryShare: Int = self.platformTokenFeeTokenTreasuryShare();
+            if (tonTreasuryShare > 0) {
+                send(SendParameters{
+                    to: self.poolWallet(),
+                    value: TOKEN_TRANSFER_GAS,
+                    mode: SendPayGasSeparately + SendIgnoreErrors,
+                    bounce: true,
+                    body: JettonTransfer{
+                        queryId: 0,
+                        amount: tonTreasuryShare,
+                        destination: msg.platformTonTreasury,
+                        responseDestination: null,
+                        customPayload: null,
+                        forwardTonAmount: JETTON_FORWARD_TON,
+                        forwardPayload: emptyCell()
+                    }.toCell()
+                });
+            }
+            if (tokenTreasuryShare > 0) {
+                send(SendParameters{
+                    to: self.poolWallet(),
+                    value: TOKEN_TRANSFER_GAS,
+                    mode: SendPayGasSeparately + SendIgnoreErrors,
+                    bounce: true,
+                    body: JettonTransfer{
+                        queryId: 0,
+                        amount: tokenTreasuryShare,
+                        destination: msg.platformTokenTreasury,
+                        responseDestination: null,
+                        customPayload: null,
+                        forwardTonAmount: JETTON_FORWARD_TON,
+                        forwardPayload: emptyCell()
+                    }.toCell()
+                });
+            }
+            if (self.liquidityTokenAllocation > 0) {
+                send(SendParameters{
+                    to: self.poolWallet(),
+                    value: TOKEN_TRANSFER_GAS,
+                    mode: SendPayGasSeparately + SendIgnoreErrors,
+                    bounce: true,
+                    body: JettonTransfer{
+                        queryId: 0,
+                        amount: self.liquidityTokenAllocation,
+                        destination: self.liquidityReceiver(msg),
+                        responseDestination: null,
+                        customPayload: null,
+                        forwardTonAmount: JETTON_FORWARD_TON,
+                        forwardPayload: emptyCell()
+                    }.toCell()
+                });
+            }
+        }
     }
 
     fun tokensForTon(amount: Int): Int {
@@ -601,6 +732,7 @@ contract PresalePool with Deployable {
 
     get fun getState(): PresaleState {
         let fee: Int = self.platformTonFee();
+        let liquidity: Int = self.liquidityTon();
         return PresaleState{
             totalRaised: self.totalRaised,
             totalSold: self.totalSold,
@@ -611,7 +743,9 @@ contract PresalePool with Deployable {
             treasuryClaimed: self.treasuryClaimed,
             platformTonFeePaid: self.platformTonFeePaid,
             platformTonFee: fee,
-            creatorClaimable: self.totalRaised - fee
+            liquidityTon: liquidity,
+            creatorClaimable: self.totalRaised - fee - liquidity,
+            tokenFeesRouted: self.tokenFeesRouted
         };
     }
 
@@ -621,8 +755,6 @@ contract PresalePool with Deployable {
             creator: self.creator,
             token: self.token,
             treasuryAddress: self.treasuryAddress,
-            platformTonTreasury: self.platformTonTreasury,
-            platformTokenTreasury: self.platformTokenTreasury,
             platformTonFeeBps: self.platformTonFeeBps,
             platformTokenFeeBps: self.platformTokenFeeBps,
             presaleRate: self.presaleRate,
@@ -636,6 +768,8 @@ contract PresalePool with Deployable {
             presaleTokenAllocation: self.presaleTokenAllocation,
             buyerTokenAllocation: self.buyerTokenAllocation,
             platformTokenFee: self.platformTokenFee,
+            platformTokenFeeTonTreasuryShare: self.platformTokenFeeTonTreasuryShare(),
+            platformTokenFeeTokenTreasuryShare: self.platformTokenFeeTokenTreasuryShare(),
             liquidityTokenAllocation: self.liquidityTokenAllocation
         };
     }
@@ -653,17 +787,24 @@ contract LaunchpadFactory with Deployable {
     owner: Address;
     platformTonTreasury: Address;
     platformTokenTreasury: Address;
+    liquidityTreasury: Address;
+    liquidityTreasurySet: Bool;
     platformTonFeeBps: Int;
     platformTokenFeeBps: Int;
+    pauseNewLaunches: Bool;
     launchCount: Int;
     records: map<Int, LaunchRecord>;
+    launchedPools: map<Address, Bool>;
 
     init(owner: Address) {
         self.owner = owner;
         self.platformTonTreasury = owner;
         self.platformTokenTreasury = owner;
+        self.liquidityTreasury = owner;
+        self.liquidityTreasurySet = false;
         self.platformTonFeeBps = DEFAULT_PLATFORM_TON_FEE_BPS;
         self.platformTokenFeeBps = DEFAULT_PLATFORM_TOKEN_FEE_BPS;
+        self.pauseNewLaunches = false;
         self.launchCount = 0;
     }
 
@@ -675,6 +816,12 @@ contract LaunchpadFactory with Deployable {
     receive(msg: UpdatePlatformTokenTreasury) {
         throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
         self.platformTokenTreasury = msg.newAddress;
+    }
+
+    receive(msg: UpdateLiquidityTreasury) {
+        throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
+        self.liquidityTreasury = msg.newAddress;
+        self.liquidityTreasurySet = true;
     }
 
     receive(msg: UpdatePlatformTonFeeBps) {
@@ -694,10 +841,38 @@ contract LaunchpadFactory with Deployable {
         self.owner = msg.newOwner;
     }
 
+    receive(_: PauseNewLaunches) {
+        throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
+        self.pauseNewLaunches = true;
+    }
+
+    receive(_: UnpauseNewLaunches) {
+        throwUnless(ERR_NOT_OWNER, context().sender == self.owner);
+        self.pauseNewLaunches = false;
+    }
+
+    receive(_: RequestTreasuries) {
+        let valid: Bool? = self.launchedPools.get(context().sender);
+        throwUnless(ERR_NOT_FACTORY, valid != null && valid!!);
+        send(SendParameters{
+            to: context().sender,
+            value: DEPLOY_VALUE,
+            mode: SendPayGasSeparately + SendIgnoreErrors,
+            bounce: true,
+            body: CurrentTreasuries{
+                platformTonTreasury: self.platformTonTreasury,
+                platformTokenTreasury: self.platformTokenTreasury,
+                liquidityTreasury: self.liquidityTreasury,
+                liquidityTreasurySet: self.liquidityTreasurySet
+            }.toCell()
+        });
+    }
+
     receive(msg: LaunchToken) {
         let creator: Address = context().sender;
+        throwUnless(ERR_ALREADY_DONE, !self.pauseNewLaunches);
         throwUnless(ERR_BAD_ALLOCATION, msg.presalePercent + msg.liquidityPercentTokens + msg.creatorPercent == 100);
-        throwUnless(ERR_BAD_ALLOCATION, msg.liquidityPercentOfRaised <= 100);
+        throwUnless(ERR_BAD_ALLOCATION, msg.liquidityPercentOfRaised <= BPS_DENOMINATOR);
         throwUnless(ERR_BAD_CAPS, msg.softCap <= msg.hardCap);
         throwUnless(ERR_BAD_CAPS, msg.minContribution <= msg.maxContribution);
         throwUnless(ERR_BAD_TIME, msg.startTime < msg.endTime);
@@ -705,20 +880,18 @@ contract LaunchpadFactory with Deployable {
         let launchId: Int = self.launchCount;
         let tokenInit: StateInit = initOf LaunchpadJettonMaster(myAddress(), msg.name, msg.symbol, msg.description, msg.metadata, msg.totalSupply, msg.decimals);
         let tokenAddress: Address = contractAddress(tokenInit);
-        let presaleAllocation: Int = (msg.totalSupply * msg.presalePercent) / PERCENT_DENOMINATOR;
-        let platformTokenFee: Int = (presaleAllocation * self.platformTokenFeeBps) / BPS_DENOMINATOR;
-        let buyerTokenAllocation: Int = presaleAllocation - platformTokenFee;
-        let liquidityAllocation: Int = (msg.totalSupply * msg.liquidityPercentTokens) / PERCENT_DENOMINATOR;
-        let creatorAllocation: Int = msg.totalSupply - presaleAllocation - liquidityAllocation;
-        let creatorManagedAllocation: Int = creatorAllocation + liquidityAllocation;
+        let platformTokenFee: Int = (msg.totalSupply * self.platformTokenFeeBps) / BPS_DENOMINATOR;
+        let allocatableSupply: Int = msg.totalSupply - platformTokenFee;
+        let presaleAllocation: Int = (allocatableSupply * msg.presalePercent) / PERCENT_DENOMINATOR;
+        let liquidityAllocation: Int = (allocatableSupply * msg.liquidityPercentTokens) / PERCENT_DENOMINATOR;
+        let creatorAllocation: Int = allocatableSupply - presaleAllocation - liquidityAllocation;
+        let buyerTokenAllocation: Int = presaleAllocation;
 
         let poolInit: StateInit = initOf PresalePool(
             myAddress(),
             creator,
             tokenAddress,
             msg.treasuryAddress,
-            self.platformTonTreasury,
-            self.platformTokenTreasury,
             self.platformTonFeeBps,
             self.platformTokenFeeBps,
             msg.presaleRate,
@@ -737,6 +910,7 @@ contract LaunchpadFactory with Deployable {
         let poolAddress: Address = contractAddress(poolInit);
 
         self.records.set(launchId, LaunchRecord{token: tokenAddress, pool: poolAddress, creator: creator});
+        self.launchedPools.set(poolAddress, true);
         self.launchCount = launchId + 1;
 
         deploy(DeployParameters{
@@ -744,11 +918,10 @@ contract LaunchpadFactory with Deployable {
             value: TOKEN_DEPLOY_VALUE,
             mode: SendIgnoreErrors,
             bounce: false,
-            body: MintToken{to: poolAddress, amount: buyerTokenAllocation}.toCell()
+            body: MintToken{to: poolAddress, amount: buyerTokenAllocation + platformTokenFee + liquidityAllocation}.toCell()
         });
         deploy(DeployParameters{init: poolInit, value: DEPLOY_VALUE, mode: SendIgnoreErrors, bounce: false, body: Deploy{queryId: launchId}.toCell()});
-        send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: self.platformTokenTreasury, amount: platformTokenFee}.toCell()});
-        send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: creator, amount: creatorManagedAllocation}.toCell()});
+        send(SendParameters{to: tokenAddress, value: TOKEN_TRANSFER_GAS, mode: SendIgnoreErrors, bounce: true, body: MintToken{to: creator, amount: creatorAllocation}.toCell()});
     }
 
     get fun getLaunchCount(): Int {
@@ -766,8 +939,11 @@ contract LaunchpadFactory with Deployable {
             owner: self.owner,
             platformTonTreasury: self.platformTonTreasury,
             platformTokenTreasury: self.platformTokenTreasury,
+            liquidityTreasury: self.liquidityTreasury,
+            liquidityTreasurySet: self.liquidityTreasurySet,
             platformTonFeeBps: self.platformTonFeeBps,
             platformTokenFeeBps: self.platformTokenFeeBps,
+            pauseNewLaunches: self.pauseNewLaunches,
             launchCount: self.launchCount
         };
     }
