@@ -114,7 +114,7 @@ class TonpadIndexer {
             tokenName: `TONPad Launch ${i + 1}`,
             symbol: `TON${i + 1}`,
             description: "Launch discovered from the TONPad factory.",
-            logoUrl: "https://tonlaunchpad.vercel.app/icon.png",
+            logoUrl: "https://tonpad.org/icon.png",
             creatorWallet,
             factoryAddress: config.factoryAddress,
             tokenMasterAddress,
