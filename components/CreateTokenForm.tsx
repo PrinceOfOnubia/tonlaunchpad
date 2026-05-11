@@ -41,6 +41,12 @@ const STEPS: { title: string; subtitle: string }[] = [
   { title: "Review", subtitle: "Confirm & deploy" },
 ];
 
+/**
+ * Total supply is fixed by the platform — every launched token gets exactly
+ * 1B units. Single source of truth; the form treats this as read-only.
+ */
+const FIXED_TOTAL_SUPPLY = 1_000_000_000;
+
 const initialPayload = (): CreateTokenPayload => {
   const now = new Date();
   const start = new Date(now.getTime() + 60 * 60 * 1000); // +1h
@@ -50,7 +56,7 @@ const initialPayload = (): CreateTokenPayload => {
     symbol: "",
     description: "",
     imageUrl: null,
-    totalSupply: 1_000_000_000,
+    totalSupply: FIXED_TOTAL_SUPPLY,
     decimals: 9,
     allocations: { presale: 50, liquidity: 30, creator: 20 },
     presale: {
@@ -129,12 +135,6 @@ function computePricing(d: CreateTokenPayload): PricingBreakdown {
       ? ((listingPriceTon - presalePriceTon) / listingPriceTon) * 100
       : 0;
 
-  let warning: string | null = null;
-  if (presalePriceTon > listingPriceTon && listingPriceTon > 0) {
-    const diff = ((presalePriceTon - listingPriceTon) / listingPriceTon) * 100;
-    warning = `Presale price is ${diff.toFixed(1)}% above listing price — buyers would be underwater at launch.`;
-  }
-
   return {
     rate,
     presaleTokens,
@@ -144,7 +144,7 @@ function computePricing(d: CreateTokenPayload): PricingBreakdown {
     listingPriceTon,
     marketCapTon,
     discountPct,
-    warning,
+    warning: null,
     ok: true,
   };
 }
@@ -175,6 +175,46 @@ function trimZeros(s: string): string {
 }
 
 // =============================================================================
+// Allocation auto-balancer — moving one slider redistributes the others so the
+// total is always exactly 100. The other two keep their relative ratio; if
+// both were at 0, the remainder is split evenly.
+// =============================================================================
+type AllocKey = "presale" | "liquidity" | "creator";
+
+function rebalanceAllocations(
+  current: { presale: number; liquidity: number; creator: number },
+  changed: AllocKey,
+  newValue: number,
+): { presale: number; liquidity: number; creator: number } {
+  const v = clamp(Math.round(newValue), 0, 100);
+  const remaining = 100 - v;
+  const others: AllocKey[] = (["presale", "liquidity", "creator"] as AllocKey[]).filter(
+    (k) => k !== changed,
+  );
+  const [a, b] = others;
+  const aOld = current[a];
+  const bOld = current[b];
+  const otherSum = aOld + bOld;
+
+  let aNew: number;
+  let bNew: number;
+  if (otherSum <= 0) {
+    aNew = Math.floor(remaining / 2);
+    bNew = remaining - aNew;
+  } else {
+    aNew = Math.round((aOld / otherSum) * remaining);
+    bNew = remaining - aNew;
+  }
+
+  return {
+    ...current,
+    [changed]: v,
+    [a]: aNew,
+    [b]: bNew,
+  } as { presale: number; liquidity: number; creator: number };
+}
+
+// =============================================================================
 // PricingBreakdown — visible calculator panel rendered inside Step 3
 // =============================================================================
 function PricingBreakdown({
@@ -197,7 +237,7 @@ function PricingBreakdown({
             liquidity %.
           </div>
         </div>
-        {pricing.ok && !pricing.warning && pricing.discountPct > 0 && (
+        {pricing.ok && pricing.discountPct > 0 && (
           <div className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
             Presale −{pricing.discountPct.toFixed(1)}% vs listing
           </div>
@@ -227,12 +267,6 @@ function PricingBreakdown({
             label="FDV at listing"
             value={formatTon(pricing.marketCapTon)}
           />
-        </div>
-      )}
-
-      {pricing.warning && (
-        <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs font-medium text-red-700 ring-1 ring-red-200">
-          ⚠ {pricing.warning}
         </div>
       )}
     </div>
@@ -764,13 +798,13 @@ function StepIdentity(props: {
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Total supply" required>
+        <Field label="Total supply" hint="Fixed at 1,000,000,000 by the platform">
           <input
-            type="number"
-            value={data.totalSupply}
-            onChange={(e) => update("totalSupply", Number(e.target.value))}
-            min={1}
-            className="input-base font-mono"
+            type="text"
+            value={data.totalSupply.toLocaleString("en-US")}
+            readOnly
+            disabled
+            className="input-base font-mono cursor-not-allowed bg-ink-50 text-ink-500"
           />
         </Field>
         <Field label="Decimals" hint="Standard is 9 for TON jettons">
@@ -892,25 +926,34 @@ function StepAllocation(props: {
   const { data, patch, sum } = props;
   const ok = sum === 100;
   return (
-    <Section title="Token Allocation" subtitle="Must sum to exactly 100%">
+    <Section
+      title="Token Allocation"
+      subtitle="Sliders auto-balance to 100% — moving one rebalances the others"
+    >
       <div className="space-y-5">
         <AllocSlider
           label="Presale"
           color="bg-ton-500"
           value={data.allocations.presale}
-          onChange={(v) => patch("allocations", { presale: v })}
+          onChange={(v) =>
+            patch("allocations", rebalanceAllocations(data.allocations, "presale", v))
+          }
         />
         <AllocSlider
           label="Liquidity"
           color="bg-ton-300"
           value={data.allocations.liquidity}
-          onChange={(v) => patch("allocations", { liquidity: v })}
+          onChange={(v) =>
+            patch("allocations", rebalanceAllocations(data.allocations, "liquidity", v))
+          }
         />
         <AllocSlider
           label="Creator"
           color="bg-ton-700"
           value={data.allocations.creator}
-          onChange={(v) => patch("allocations", { creator: v })}
+          onChange={(v) =>
+            patch("allocations", rebalanceAllocations(data.allocations, "creator", v))
+          }
         />
       </div>
 
@@ -1125,7 +1168,7 @@ function StepReview({
             label="FDV at listing"
             value={pricing.ok ? formatTon(pricing.marketCapTon) : "—"}
           />
-          {pricing.ok && pricing.discountPct > 0 && !pricing.warning && (
+          {pricing.ok && pricing.discountPct > 0 && (
             <ReviewRow
               label="Presale discount"
               value={`−${pricing.discountPct.toFixed(1)}% vs listing`}
@@ -1133,14 +1176,13 @@ function StepReview({
           )}
         </ReviewSection>
 
-        {pricing.warning && (
-          <div className="rounded-xl bg-red-50 p-3 text-xs font-medium text-red-700 ring-1 ring-red-200">
-            ⚠ {pricing.warning}
-          </div>
-        )}
+        <ReviewSection title="Platform fees">
+          <ReviewRow label="On raised TON" value="5% of total raise" />
+          <ReviewRow label="On token supply" value="1% of total supply" />
+        </ReviewSection>
 
         <div className="rounded-xl bg-ton-50 p-4 text-sm font-semibold text-ton-700 ring-1 ring-ton-200">
-          Platform fee: 5% of raised TON + 1% token fee.
+          Platform fee: 5% of raised TON + 1% of total token supply.
         </div>
       </div>
     </Section>
@@ -1253,8 +1295,6 @@ function validate(d: CreateTokenPayload) {
     bySteps[2] = { ok: false, reason: "End time must be after start time" };
   else if (d.liquidityPercent < 0 || d.liquidityPercent > 100)
     bySteps[2] = { ok: false, reason: "Liquidity % must be 0-100" };
-  else if (pricing.warning)
-    bySteps[2] = { ok: false, reason: pricing.warning };
 
   const allValid = Object.values(bySteps).every((c) => c.ok);
   return { bySteps, allValid };
