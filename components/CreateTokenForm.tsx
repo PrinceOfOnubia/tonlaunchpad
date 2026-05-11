@@ -14,9 +14,11 @@ import {
   Wallet,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { computeAllocationBreakdown } from "@/lib/allocationMath";
 import {
   cn,
   clamp,
+  formatNumber,
   formatTon,
   fromDatetimeLocal,
   toDatetimeLocal,
@@ -101,7 +103,15 @@ interface PricingBreakdown {
 }
 
 function computePricing(d: CreateTokenPayload): PricingBreakdown {
-  const presaleTokens = d.totalSupply * (d.allocations.presale / 100);
+  const allocationBreakdown = computeAllocationBreakdown({
+    totalSupply: d.totalSupply,
+    presalePercent: d.allocations.presale,
+    liquidityPercentTokens: d.allocations.liquidity,
+    creatorPercent: d.allocations.creator,
+    totalRaisedTon: d.presale.hardCap,
+    liquidityPercentOfRaised: d.liquidityPercent,
+  });
+  const presaleTokens = allocationBreakdown.presaleTokens;
   const liquidityTon = d.presale.hardCap * (d.liquidityPercent / 100);
   const listingTokens = d.totalSupply * (d.allocations.liquidity / 100);
 
@@ -1118,6 +1128,15 @@ function StepReview({
   imagePreview: string | null;
   pricing: PricingBreakdown;
 }) {
+  const breakdown = computeAllocationBreakdown({
+    totalSupply: data.totalSupply,
+    presalePercent: data.allocations.presale,
+    liquidityPercentTokens: data.allocations.liquidity,
+    creatorPercent: data.allocations.creator,
+    totalRaisedTon: data.presale.hardCap,
+    liquidityPercentOfRaised: data.liquidityPercent,
+  });
+
   return (
     <Section title="Review & Deploy" subtitle="Double-check everything before launching">
       <div className="space-y-3">
@@ -1139,6 +1158,13 @@ function StepReview({
           <ReviewRow label="Presale" value={`${data.allocations.presale}%`} />
           <ReviewRow label="Liquidity" value={`${data.allocations.liquidity}%`} />
           <ReviewRow label="Creator" value={`${data.allocations.creator}%`} />
+        </ReviewSection>
+
+        <ReviewSection title="Token allocation">
+          <ReviewRow label="Buyer claimable presale tokens" value={formatTokenAmount(breakdown.presaleTokens)} />
+          <ReviewRow label="Platform token fee" value={formatTokenAmount(breakdown.presaleTokenFee)} />
+          <ReviewRow label="Liquidity tokens" value={formatTokenAmount(breakdown.liquidityTokens)} />
+          <ReviewRow label="Creator tokens" value={formatTokenAmount(breakdown.creatorTokens)} />
         </ReviewSection>
 
         <ReviewSection title="Presale">
@@ -1176,9 +1202,11 @@ function StepReview({
           )}
         </ReviewSection>
 
-        <ReviewSection title="Platform fees">
-          <ReviewRow label="On raised TON" value="5% of total raise" />
-          <ReviewRow label="On token supply" value="1% of total supply" />
+        <ReviewSection title="Raised TON allocation">
+          <ReviewRow label="Buyer raise target" value={formatTon(breakdown.presaleTON)} />
+          <ReviewRow label="Liquidity TON" value={formatTon(breakdown.liquidityTON)} />
+          <ReviewRow label="Platform TON fee" value={formatTon(breakdown.platformFeeTON)} />
+          <ReviewRow label="Creator TON" value={formatTon(breakdown.creatorTON)} />
         </ReviewSection>
 
         <div className="rounded-xl bg-ton-50 p-4 text-sm font-semibold text-ton-700 ring-1 ring-ton-200">
@@ -1207,6 +1235,10 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
       <span className="font-mono font-semibold text-ink-900">{value || "—"}</span>
     </div>
   );
+}
+
+function formatTokenAmount(value: number) {
+  return formatNumber(value, 0);
 }
 
 // =============================================================================

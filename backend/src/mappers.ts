@@ -1,4 +1,5 @@
 import type { Launch, Transaction } from "@prisma/client";
+import { computeAllocationBreakdown } from "./allocation";
 
 type TransactionWithLaunch = Transaction & { launch?: Launch | null };
 
@@ -6,16 +7,35 @@ export function launchStatus(launch: Launch): "upcoming" | "live" | "succeeded" 
   return launch.status;
 }
 
-export function computeStatus(launch: Pick<Launch, "startTime" | "endTime" | "raisedTon" | "softCap" | "status">) {
+export function computeStatus(
+  launch: Pick<Launch, "startTime" | "endTime" | "raisedTon" | "softCap" | "status"> & {
+    hardCap?: number;
+  },
+) {
+  if (launch.status === "succeeded") return "succeeded";
+  if (launch.status === "failed") return "failed";
   const now = Date.now();
   const start = launch.startTime.getTime();
   const end = launch.endTime.getTime();
   if (now < start) return "upcoming";
+  if (launch.hardCap !== undefined && launch.raisedTon >= launch.hardCap) return "succeeded";
   if (now <= end) return "live";
   return launch.raisedTon >= launch.softCap ? "succeeded" : "failed";
 }
 
 export function launchToToken(launch: Launch) {
+  const allocationBreakdown = computeAllocationBreakdown({
+    totalSupply: launch.totalSupply,
+    presalePercent: launch.presaleAllocation,
+    liquidityPercentTokens: launch.liquidityAllocation,
+    creatorPercent: launch.creatorAllocation,
+    totalRaisedTon: launch.raisedTon,
+    liquidityPercentOfRaised: launch.liquidityPercent,
+    platformTonFeeBps: launch.platformTonFeeBps,
+    platformTokenFeeBps: launch.platformTokenFeeBps,
+    liquidityTreasurySet: !!launch.liquidityTreasury,
+  });
+
   return {
     id: launch.id,
     address: launch.tokenMasterAddress ?? null,
@@ -49,10 +69,12 @@ export function launchToToken(launch: Launch) {
       maxContribution: launch.maxContribution ?? undefined,
     },
     liquidityPercent: launch.liquidityPercent,
+    allocationBreakdown,
     social: asSocial(launch.social),
     platformFees: {
       tonTreasury: launch.platformTonTreasury,
       tokenTreasury: launch.platformTokenTreasury,
+      liquidityTreasury: launch.liquidityTreasury,
       tonFeeBps: launch.platformTonFeeBps,
       tokenFeeBps: launch.platformTokenFeeBps,
     },

@@ -489,6 +489,7 @@ class TonpadIndexer {
             endTime,
             raisedTon: totalRaised,
             softCap,
+            hardCap,
             status: failed ? "failed" : "upcoming",
           });
 

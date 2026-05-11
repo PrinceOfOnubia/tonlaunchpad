@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, AtSign, Check, Copy, ExternalLink, Globe, Loader2, Send, Music2 } from "lucide-react";
 import { useToken } from "@/lib/hooks";
-import { cn, formatCompact, formatPercent, formatPrice, formatTon, shortAddress } from "@/lib/utils";
+import { cn, formatCompact, formatNumber, formatPercent, formatPrice, formatTon, shortAddress } from "@/lib/utils";
 import { TokenChart } from "@/components/TokenChart";
 import { PresalePanel } from "@/components/PresalePanel";
 import { PresaleProgress } from "@/components/PresaleProgress";
@@ -306,14 +306,45 @@ function Stat({
 
 function Tokenomics({ token }: { token: Token }) {
   const a = token.allocations;
+  const breakdown = token.allocationBreakdown;
   return (
     <div className="glass p-6">
       <h3 className="font-display text-lg font-semibold text-ink-900">Tokenomics</h3>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2.5">
-          <Row label="Total supply" value={token.totalSupply.toLocaleString()} />
-          <Row label="Decimals" value={String(token.decimals)} />
-          <Row label="Manual liquidity plan" value={`${token.liquidityPercent}% of raise`} />
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <Row label="Total supply" value={token.totalSupply.toLocaleString()} />
+            <Row label="Decimals" value={String(token.decimals)} />
+            <Row label="Manual liquidity plan" value={`${token.liquidityPercent}% of raise`} />
+            {breakdown && (
+              <Row
+                label="Liquidity receiver"
+                value={breakdown.liquidityReceiver === "liquidity" ? "Liquidity wallet" : "Creator wallet"}
+              />
+            )}
+          </div>
+          {breakdown && (
+            <div className="space-y-2.5 rounded-xl border border-ink-100 bg-white/60 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                Token Allocation
+              </div>
+              <Row label="Buyer claimable presale tokens" value={formatNumber(breakdown.presaleTokens, 0)} />
+              <Row label="Platform token fee" value={formatNumber(breakdown.presaleTokenFee, 0)} />
+              <Row label="Liquidity tokens" value={formatNumber(breakdown.liquidityTokens, 0)} />
+              <Row label="Creator tokens" value={formatNumber(breakdown.creatorTokens, 0)} />
+            </div>
+          )}
+          {breakdown && (
+            <div className="space-y-2.5 rounded-xl border border-ink-100 bg-white/60 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                Raised TON Allocation
+              </div>
+              <Row label="Buyer raised TON" value={formatTon(breakdown.presaleTON)} />
+              <Row label="Liquidity TON" value={formatTon(breakdown.liquidityTON)} />
+              <Row label="Platform TON fee" value={formatTon(breakdown.platformFeeTON)} />
+              <Row label="Creator TON" value={formatTon(breakdown.creatorTON)} />
+            </div>
+          )}
         </div>
         <div className="space-y-2.5">
           <AllocBar label="Presale" pct={a.presale} color="bg-ton-500" />

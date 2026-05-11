@@ -166,6 +166,8 @@ export function normalizeToken(input: unknown): Token {
   const presale = isRecord(source.presale) ? source.presale : {};
   const allocations = isRecord(source.allocations) ? source.allocations : {};
   const social = isRecord(source.social) ? source.social : {};
+  const allocationBreakdown = isRecord(source.allocationBreakdown) ? source.allocationBreakdown : {};
+  const platformFees = isRecord(source.platformFees) ? source.platformFees : {};
   const now = new Date().toISOString();
 
   return {
@@ -217,6 +219,25 @@ export function normalizeToken(input: unknown): Token {
     volume24h: numberValue(source.volume24h, 0),
     holders: numberValue(source.holders, 0),
     setupState: source.setupState === "ready" ? "ready" : source.setupState === "preparing" ? "preparing" : undefined,
+    allocationBreakdown: {
+      presaleTON: numberValue(allocationBreakdown.presaleTON, 0),
+      liquidityTON: numberValue(allocationBreakdown.liquidityTON, 0),
+      platformFeeTON: numberValue(allocationBreakdown.platformFeeTON, 0),
+      creatorTON: numberValue(allocationBreakdown.creatorTON, 0),
+      presaleTokens: numberValue(allocationBreakdown.presaleTokens, 0),
+      liquidityTokens: numberValue(allocationBreakdown.liquidityTokens, 0),
+      creatorTokens: numberValue(allocationBreakdown.creatorTokens, 0),
+      presaleTokenFee: numberValue(allocationBreakdown.presaleTokenFee, 0),
+      liquidityReceiver:
+        allocationBreakdown.liquidityReceiver === "liquidity" ? "liquidity" : "creator",
+    },
+    platformFees: {
+      tonTreasury: nullableString(platformFees.tonTreasury),
+      tokenTreasury: nullableString(platformFees.tokenTreasury),
+      liquidityTreasury: nullableString(platformFees.liquidityTreasury),
+      tonFeeBps: numberValue(platformFees.tonFeeBps, 500),
+      tokenFeeBps: numberValue(platformFees.tokenFeeBps, 100),
+    },
   };
 }
 

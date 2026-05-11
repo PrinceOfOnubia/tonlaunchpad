@@ -33,4 +33,13 @@ describe("derivePresaleStatus", () => {
 
     expect(status).toBe("failed");
   });
+
+  it("marks a presale succeeded immediately when the hard cap is filled", () => {
+    const status = derivePresaleStatus(
+      presale({ status: "live", raised: 20 }),
+      new Date("2026-05-11T11:00:00.000Z").getTime(),
+    );
+
+    expect(status).toBe("succeeded");
+  });
 });

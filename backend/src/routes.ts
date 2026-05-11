@@ -237,6 +237,7 @@ router.post("/api/launches", async (req, res, next) => {
       endTime: body.presale.endTime,
       raisedTon: 0,
       softCap: body.presale.softCap,
+      hardCap: body.presale.hardCap,
       status: "upcoming",
     });
 

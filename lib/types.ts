@@ -38,6 +38,18 @@ export interface TokenAllocations {
   creator: number;
 }
 
+export interface AllocationBreakdown {
+  presaleTON: number;
+  liquidityTON: number;
+  platformFeeTON: number;
+  creatorTON: number;
+  presaleTokens: number;
+  liquidityTokens: number;
+  creatorTokens: number;
+  presaleTokenFee: number;
+  liquidityReceiver: "creator" | "liquidity";
+}
+
 export interface SocialLinks {
   website?: string;
   twitter?: string;
@@ -85,9 +97,11 @@ export interface Token {
   volume24h: number;
   holders: number;
   setupState?: "preparing" | "ready";
+  allocationBreakdown?: AllocationBreakdown;
   platformFees?: {
     tonTreasury?: string | null;
     tokenTreasury?: string | null;
+    liquidityTreasury?: string | null;
     tonFeeBps: number;
     tokenFeeBps: number;
   };

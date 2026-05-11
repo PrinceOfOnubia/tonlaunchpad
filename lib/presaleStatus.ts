@@ -11,6 +11,7 @@ export function derivePresaleStatus(presale: PresaleInfo, nowMs = Date.now()): P
   if (!Number.isFinite(start) || !Number.isFinite(end)) return presale.status;
 
   if (nowMs < start) return "upcoming";
+  if (presale.raised >= presale.hardCap) return "succeeded";
   if (nowMs <= end) return "live";
   return presale.raised >= presale.softCap ? "succeeded" : "failed";
 }
