@@ -228,6 +228,7 @@ export function normalizeToken(input: unknown): Token {
       liquidityTokens: numberValue(allocationBreakdown.liquidityTokens, 0),
       creatorTokens: numberValue(allocationBreakdown.creatorTokens, 0),
       presaleTokenFee: numberValue(allocationBreakdown.presaleTokenFee, 0),
+      burnedTokens: numberValue(allocationBreakdown.burnedTokens, 0),
       liquidityReceiver:
         allocationBreakdown.liquidityReceiver === "liquidity" ? "liquidity" : "creator",
     },

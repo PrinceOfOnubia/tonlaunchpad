@@ -7,6 +7,7 @@ export interface AllocationBreakdown {
   liquidityTokens: number;
   creatorTokens: number;
   presaleTokenFee: number;
+  burnedTokens: number;
   liquidityReceiver: "creator" | "liquidity";
 }
 
@@ -20,6 +21,7 @@ export interface AllocationInputs {
   platformTonFeeBps?: number;
   platformTokenFeeBps?: number;
   liquidityTreasurySet?: boolean;
+  burnedTokens?: number;
 }
 
 export function computeAllocationBreakdown(input: AllocationInputs): AllocationBreakdown {
@@ -30,7 +32,8 @@ export function computeAllocationBreakdown(input: AllocationInputs): AllocationB
   const liquidityTokens = percentageOf(input.totalSupply, input.liquidityPercentTokens);
   const creatorTokens = percentageOf(input.totalSupply, input.creatorPercent);
   const presaleTokenFee = basisPointsOf(input.totalSupply, platformTokenFeeBps);
-  const presaleTokens = Math.max(configuredPresaleTokens - presaleTokenFee, 0);
+  const burnedTokens = input.burnedTokens ?? 0;
+  const presaleTokens = Math.max(configuredPresaleTokens - presaleTokenFee - burnedTokens, 0);
 
   const presaleTON = input.totalRaisedTon;
   const platformFeeTON = basisPointsOf(input.totalRaisedTon, platformTonFeeBps);
@@ -46,6 +49,7 @@ export function computeAllocationBreakdown(input: AllocationInputs): AllocationB
     liquidityTokens,
     creatorTokens,
     presaleTokenFee,
+    burnedTokens,
     liquidityReceiver:
       input.liquidityPercentOfRaised > 0 && input.liquidityTreasurySet ? "liquidity" : "creator",
   };

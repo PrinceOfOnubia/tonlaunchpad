@@ -5,20 +5,21 @@ import { useSWRConfig } from "swr";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { useMyContribution, useTokenTransactions, useWalletBalance } from "@/lib/hooks";
+import { useMyContribution, useWalletBalance } from "@/lib/hooks";
 import {
   buildContributeTransaction,
-  buildCreatorClaimTreasuryTransaction,
   normalizeTonConnectError,
 } from "@/lib/tonLaunchpad";
 import {
+  buildBurnUnsoldTokensTransaction,
   buildCancelPresaleEarlyTransaction,
   buildEndPresaleEarlyTransaction,
   getPresaleFactoryOwner,
   sameTonAddress,
 } from "@/lib/presaleControls";
+import { canBurnUnsoldTokens } from "@/lib/presaleActionState";
 import { hardCapRemaining, useEffectivePresale } from "@/lib/presaleStatus";
-import { cn, formatTon, timeUntil } from "@/lib/utils";
+import { cn, formatNumber, formatTon, timeUntil } from "@/lib/utils";
 import type { Token } from "@/lib/types";
 
 interface Props {
@@ -31,21 +32,20 @@ export function PresalePanel({ token }: Props) {
   const [tonConnectUI] = useTonConnectUI();
   const { mutate } = useSWRConfig();
   const [amount, setAmount] = useState("");
-  const [busy, setBusy] = useState<"contribute" | "claim" | "refund" | "end" | "cancel" | null>(null);
+  const [busy, setBusy] = useState<"contribute" | "claim" | "refund" | "end" | "cancel" | "burn" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [poolMissingSince, setPoolMissingSince] = useState<number | null>(null);
   const [factoryOwner, setFactoryOwner] = useState<string | null>(null);
   const [ownerLookupFailed, setOwnerLookupFailed] = useState(false);
+  const [burnConfirmOpen, setBurnConfirmOpen] = useState(false);
 
   const { data: myContrib, mutate: refreshContrib } = useMyContribution(
     token.id,
     wallet || null,
   );
-  const { data: recentTransactions } = useTokenTransactions(token.id, 25);
   const { data: walletBalance, isLoading: balanceLoading, mutate: refreshBalance } =
     useWalletBalance(wallet || null);
-  const [creatorTreasuryClaimed, setCreatorTreasuryClaimed] = useState(false);
 
   const numAmount = parseFloat(amount);
   const validAmount = !Number.isNaN(numAmount) && numAmount > 0;
@@ -61,6 +61,22 @@ export function PresalePanel({ token }: Props) {
   const isFactoryOwner = !!wallet && !!factoryOwner && sameTonAddress(wallet, factoryOwner);
   const canManagePresale = isCreator || isFactoryOwner;
   const poolReady = !!token.presalePoolAddress;
+  const burnedTokens = token.allocationBreakdown?.burnedTokens ?? 0;
+  const estimatedSoldTokens = presale.raised * presale.rate;
+  const burnableTokens = Math.max((token.allocationBreakdown?.presaleTokens ?? 0) - estimatedSoldTokens, 0);
+  const showBurnUnsoldAction =
+    canManagePresale &&
+    poolReady &&
+    canBurnUnsoldTokens({
+      status: presale.status,
+      raised: presale.raised,
+      softCap: presale.softCap,
+      hardCap: presale.hardCap,
+      burnedTokens,
+    }) &&
+    burnableTokens > 0;
+  const panelTitle =
+    burnedTokens > 0 ? "Ended — unsold tokens burned" : labelForStatus(presale.status);
   const setupTakingLong =
     presale.status === "live" &&
     !poolReady &&
@@ -101,16 +117,6 @@ export function PresalePanel({ token }: Props) {
       cancelled = true;
     };
   }, [token.presalePoolAddress]);
-
-  useEffect(() => {
-    if (!recentTransactions) return;
-    const claimed = recentTransactions.some(
-      (tx) => tx.kind === "treasury" && sameTonAddress(tx.wallet, token.creator),
-    );
-    if (claimed) {
-      setCreatorTreasuryClaimed(true);
-    }
-  }, [recentTransactions, token.creator]);
 
   async function send(boc: LaunchTxDebug) {
     const tx = {
@@ -285,41 +291,6 @@ export function PresalePanel({ token }: Props) {
     }
   }
 
-  async function handleClaimTreasury() {
-    if (!wallet) {
-      tonConnectUI.openModal();
-      return;
-    }
-    const poolAddress = token.presalePoolAddress;
-    if (!poolAddress) {
-      return;
-    }
-    setBusy("claim");
-    setError(null);
-    try {
-      const result = await send(buildCreatorClaimTreasuryTransaction(poolAddress));
-      setTxHash(result.boc);
-      setCreatorTreasuryClaimed(true);
-      await api.presale
-        .recordTreasuryClaim(token.id, {
-          wallet,
-          txHash: result.boc,
-          transactionBoc: result.boc,
-        })
-        .catch((err) => console.warn("Treasury record unavailable; waiting for indexer.", err));
-      void mutate(["token", token.id]);
-      void mutate(["txs", token.id, 25]);
-      void mutate(["profile", wallet]);
-      void mutate(["stats"]);
-      refreshBalance();
-    } catch (err) {
-      console.error("Creator treasury claim failed", err);
-      setError(normalizeTonConnectError(err));
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function handleEndPresaleEarly() {
     if (!wallet) {
       tonConnectUI.openModal();
@@ -418,6 +389,62 @@ export function PresalePanel({ token }: Props) {
     }
   }
 
+  async function handleBurnUnsoldTokens() {
+    if (!wallet) {
+      tonConnectUI.openModal();
+      return;
+    }
+    if (!canManagePresale) {
+      setError("Only the creator or Factory owner can burn unsold tokens.");
+      return;
+    }
+    const poolAddress = token.presalePoolAddress;
+    if (!poolAddress) return;
+    if (!showBurnUnsoldAction) {
+      setError("Unsold tokens are not available to burn for this presale.");
+      return;
+    }
+    setBusy("burn");
+    setError(null);
+    try {
+      const result = await send(buildBurnUnsoldTokensTransaction(poolAddress));
+      setTxHash(result.boc);
+      setBurnConfirmOpen(false);
+      await mutate(
+        ["token", token.id],
+        (current?: Token): Token | undefined =>
+          current
+            ? {
+                ...current,
+                presale: {
+                  ...current.presale,
+                  status: "succeeded" as const,
+                  endTime: new Date().toISOString(),
+                },
+                allocationBreakdown: current.allocationBreakdown
+                  ? {
+                      ...current.allocationBreakdown,
+                      burnedTokens: burnableTokens,
+                      presaleTokens: Math.max(current.allocationBreakdown.presaleTokens - burnableTokens, 0),
+                    }
+                  : current.allocationBreakdown,
+              }
+            : current,
+        false,
+      );
+      void mutate(["token", token.id]);
+      void mutate(["txs", token.id, 25]);
+      void mutate(["profile", wallet]);
+      void mutate(["stats"]);
+      refreshBalance();
+    } catch (err) {
+      console.error("Burn unsold tokens transaction failed", err);
+      setError(normalizeTonConnectError(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Rendering by status
   // -------------------------------------------------------------------------
@@ -425,7 +452,7 @@ export function PresalePanel({ token }: Props) {
     <div className="glass space-y-4 p-6">
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg font-semibold text-ink-900">
-          {labelForStatus(presale.status)}
+          {panelTitle}
         </h3>
         <span className="font-mono text-xs text-ink-500">
           1 TON = {presale.rate.toLocaleString()} {token.symbol}
@@ -514,22 +541,31 @@ export function PresalePanel({ token }: Props) {
         </div>
       )}
 
-      {presale.status === "succeeded" && isCreator && (
+      {showBurnUnsoldAction && (
         <div className="space-y-3 rounded-xl bg-ton-50 p-4 ring-1 ring-ton-200">
           <div>
-            <div className="text-sm font-semibold text-ton-800">Creator treasury</div>
+            <div className="text-sm font-semibold text-ton-800">Burn Unsold Tokens</div>
             <div className="mt-1 text-xs text-ton-700">
-              Claim the creator treasury after TONPad receives the 5% platform fee on-chain.
+              Burn remaining unsold presale tokens. TON payouts route automatically on close.
+            </div>
+            <div className="mt-2 text-xs font-medium text-ton-700">
+              Burnable now: {formatNumber(burnableTokens, 0)} {token.symbol}
             </div>
           </div>
           <button
-            onClick={handleClaimTreasury}
-            disabled={busy !== null || creatorTreasuryClaimed}
+            onClick={() => setBurnConfirmOpen(true)}
+            disabled={busy !== null}
             className="btn-primary w-full"
           >
-            {busy === "claim" ? <Spinner /> : creatorTreasuryClaimed ? "Already claimed" : "Claim Treasury"}
+            {busy === "burn" ? <Spinner /> : "Burn Unsold Tokens"}
           </button>
         </div>
+      )}
+
+      {presale.status === "succeeded" && burnedTokens > 0 && (
+        <InfoBox>
+          Ended — unsold tokens burned. {formatNumber(burnedTokens, 0)} {token.symbol} were removed from the remaining presale allocation.
+        </InfoBox>
       )}
 
       {presale.status === "failed" && myContrib && myContrib.amountTon > 0 && (
@@ -574,6 +610,38 @@ export function PresalePanel({ token }: Props) {
         <div className="flex items-center gap-2 rounded-lg bg-ton-50 p-3 text-sm text-ton-700 ring-1 ring-ton-100">
           <Wallet size={16} />
           Connect your TON wallet to participate
+        </div>
+      )}
+
+      {burnConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h4 className="font-display text-lg font-semibold text-ink-900">Burn Unsold Tokens</h4>
+            <p className="mt-2 text-sm text-ink-600">
+              Clicking this will burn all remaining unsold presale tokens. This action is irreversible.
+            </p>
+            <div className="mt-4 rounded-xl bg-ink-50 p-3 text-sm text-ink-700">
+              Remaining burnable amount: <span className="font-mono font-semibold">{formatNumber(burnableTokens, 0)} {token.symbol}</span>
+            </div>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setBurnConfirmOpen(false)}
+                className="btn-ghost"
+                disabled={busy === "burn"}
+              >
+                Keep tokens
+              </button>
+              <button
+                type="button"
+                onClick={handleBurnUnsoldTokens}
+                className="btn-primary"
+                disabled={busy === "burn"}
+              >
+                {busy === "burn" ? <Spinner /> : "Confirm burn"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

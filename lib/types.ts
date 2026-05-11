@@ -47,6 +47,7 @@ export interface AllocationBreakdown {
   liquidityTokens: number;
   creatorTokens: number;
   presaleTokenFee: number;
+  burnedTokens: number;
   liquidityReceiver: "creator" | "liquidity";
 }
 

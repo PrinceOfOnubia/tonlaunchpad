@@ -332,6 +332,9 @@ function Tokenomics({ token }: { token: Token }) {
               <Row label="Platform token fee" value={formatNumber(breakdown.presaleTokenFee, 0)} />
               <Row label="Liquidity tokens" value={formatNumber(breakdown.liquidityTokens, 0)} />
               <Row label="Creator tokens" value={formatNumber(breakdown.creatorTokens, 0)} />
+              {breakdown.burnedTokens > 0 && (
+                <Row label="Burned unsold tokens" value={formatNumber(breakdown.burnedTokens, 0)} />
+              )}
             </div>
           )}
           {breakdown && (

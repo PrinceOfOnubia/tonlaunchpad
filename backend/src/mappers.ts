@@ -34,6 +34,7 @@ export function launchToToken(launch: Launch) {
     platformTonFeeBps: launch.platformTonFeeBps,
     platformTokenFeeBps: launch.platformTokenFeeBps,
     liquidityTreasurySet: !!launch.liquidityTreasury,
+    burnedTokens: launch.burnedTokens,
   });
 
   return {

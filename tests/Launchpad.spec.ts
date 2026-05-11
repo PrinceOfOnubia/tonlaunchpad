@@ -149,6 +149,18 @@ function readMetadataUrl(cell: Cell) {
   return slice.loadStringTail();
 }
 
+function getTxValue(transactions: any[], from: Address, to: Address) {
+  const match = transactions.find(
+    (tx) =>
+      tx.inMessage?.info?.type === 'internal' &&
+      tx.inMessage.info.src?.equals?.(from) &&
+      tx.inMessage.info.dest?.equals?.(to) &&
+      tx.description?.aborted === false &&
+      typeof tx.inMessage.info.value?.coins === 'bigint',
+  );
+  return match?.inMessage?.info?.value?.coins ?? null;
+}
+
 describe('TONPad public fee architecture', () => {
   it('stores the new factory config and launch record', async () => {
     const f = await fixture();
@@ -322,7 +334,7 @@ describe('TONPad public fee architecture', () => {
     const newLiquidityTreasury = await f.blockchain.treasury('new-liquidity');
 
     f.blockchain.now = f.startTime + 1;
-    await contribute(f, pool, f.user, toNano('20'));
+    await contribute(f, pool, f.user, toNano('10'));
 
     await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTonTreasury', newAddress: newTonTreasury.address });
     await f.factory.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTokenTreasury', newAddress: newTokenTreasury.address });
@@ -330,9 +342,12 @@ describe('TONPad public fee architecture', () => {
 
     f.blockchain.now = f.endTime + 1;
     const claim = await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
+    const creatorPayout = getTxValue(claim.transactions, pool.address, f.treasury.address);
 
-    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: newTonTreasury.address, value: toNano('1'), success: true });
-    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: newLiquidityTreasury.address, value: toNano('6'), success: true });
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: newTonTreasury.address, value: toNano('0.5'), success: true });
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: newLiquidityTreasury.address, value: toNano('3'), success: true });
+    expect(creatorPayout).not.toBeNull();
+    expect(creatorPayout!).toEqual(toNano('6.49'));
     expect(await jettonBalance(f, token, f.platformTonTreasury.address)).toEqual(PLATFORM_TOKEN_TON_SHARE);
     expect(await jettonBalance(f, token, f.platformTokenTreasury.address)).toEqual(PLATFORM_TOKEN_TOKEN_SHARE);
     expect(await jettonBalanceOrZero(f, token, newTonTreasury.address)).toEqual(0n);
@@ -344,14 +359,12 @@ describe('TONPad public fee architecture', () => {
     const f = await fixture();
     const { pool } = await launch(f);
     f.blockchain.now = f.startTime + 1;
-    await contribute(f, pool, f.user, toNano('10'));
-    await contribute(f, pool, f.user2, toNano('10'));
-    f.blockchain.now = f.endTime + 1;
-
-    const claim = await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
+    const claim = await contribute(f, pool, f.user, toNano('20'));
     const state = await pool.getGetState();
+    const creatorPayout = getTxValue(claim.transactions, pool.address, f.treasury.address);
 
-    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.treasury.address, value: toNano('13'), success: true });
+    expect(creatorPayout).not.toBeNull();
+    expect(creatorPayout!).toEqual(toNano('18.99'));
     expect(state.platformTonFee).toEqual(toNano('1'));
     expect(state.liquidityTon).toEqual(toNano('6'));
     expect(state.creatorClaimable).toEqual(toNano('13'));
@@ -378,13 +391,17 @@ describe('TONPad public fee architecture', () => {
     const { token, pool } = await launch(f);
 
     f.blockchain.now = f.startTime + 1;
-    await contribute(f, pool, f.user, toNano('20'));
+    const fill = await contribute(f, pool, f.user, toNano('20'));
 
     const state = await pool.getGetState();
     const claim = await pool.send(f.user.getSender(), { value: toNano('0.2') }, { $$type: 'ClaimTokens' });
+    const creatorPayout = getTxValue(fill.transactions, pool.address, f.treasury.address);
 
     expect(state.totalRaised).toEqual(toNano('20'));
     expect(state.finalized).toBe(true);
+    expect(fill.transactions).toHaveTransaction({ from: pool.address, to: f.platformTonTreasury.address, value: toNano('1'), success: true });
+    expect(creatorPayout).not.toBeNull();
+    expect(creatorPayout!).toEqual(toNano('18.99'));
     expect(claim.transactions).toHaveTransaction({ from: pool.address, success: true });
     expect(await jettonBalance(f, token, pool.address)).toEqual(BUYER_ALLOCATION - 20_000_000_000_000_000n);
   });
@@ -399,8 +416,12 @@ describe('TONPad public fee architecture', () => {
     const end = await pool.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'EndPresaleEarly' });
     const state = await pool.getGetState();
     const claim = await pool.send(f.user.getSender(), { value: toNano('0.2') }, { $$type: 'ClaimTokens' });
+    const creatorPayout = getTxValue(end.transactions, pool.address, f.treasury.address);
 
     expect(end.transactions).toHaveTransaction({ from: f.owner.address, to: pool.address, success: true });
+    expect(end.transactions).toHaveTransaction({ from: pool.address, to: f.platformTonTreasury.address, value: toNano('0.5'), success: true });
+    expect(creatorPayout).not.toBeNull();
+    expect(creatorPayout!).toEqual(toNano('9.49'));
     expect(state.finalized).toBe(true);
     expect(claim.transactions).toHaveTransaction({ from: pool.address, success: true });
     expect(await jettonBalance(f, token, f.user.address)).toEqual(10_000_000_000_000_000n);
@@ -434,11 +455,49 @@ describe('TONPad public fee architecture', () => {
     f.blockchain.now = f.endTime + 1;
 
     const claim = await pool.send(f.user.getSender(), { value: toNano('0.2') }, { $$type: 'ClaimTokens' });
-    const treasury = await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
 
     expect(claim.transactions).toHaveTransaction({ from: pool.address, success: true });
-    expect(treasury.transactions).toHaveTransaction({ from: pool.address, to: f.treasury.address, success: true });
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.treasury.address, success: true });
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, to: f.platformTonTreasury.address, success: true });
     expect(await jettonBalance(f, token, f.user.address)).toEqual(10_000_000_000_000_000n);
+  });
+
+  it('burns unsold presale tokens without touching creator, liquidity, or platform token allocations', async () => {
+    const f = await fixture();
+    const { token, pool } = await launch(f);
+
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('10'));
+    await pool.send(f.creator.getSender(), { value: toNano('0.05') }, { $$type: 'EndPresaleEarly' });
+
+    const beforeCreator = await jettonBalance(f, token, f.creator.address);
+    const beforePlatformTon = await jettonBalance(f, token, f.platformTonTreasury.address);
+    const beforePlatformToken = await jettonBalance(f, token, f.platformTokenTreasury.address);
+    const burn = await pool.send(f.creator.getSender(), { value: toNano('0.2') }, { $$type: 'BurnUnsoldTokens' });
+    const state = await pool.getGetState();
+
+    expect(burn.transactions).toHaveTransaction({ from: f.creator.address, to: pool.address, success: true });
+    expect(state.burnedTokens).toEqual(BUYER_ALLOCATION - 10_000_000_000_000_000n);
+    expect(state.finalized).toBe(true);
+    expect(await jettonBalance(f, token, pool.address)).toEqual(10_000_000_000_000_000n);
+    expect(await jettonBalance(f, token, f.creator.address)).toEqual(beforeCreator);
+    expect(await jettonBalance(f, token, f.platformTonTreasury.address)).toEqual(beforePlatformTon);
+    expect(await jettonBalance(f, token, f.platformTokenTreasury.address)).toEqual(beforePlatformToken);
+  });
+
+  it('allows only the creator or factory owner to burn unsold presale tokens', async () => {
+    const f = await fixture();
+    const { pool } = await launch(f);
+
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('10'));
+    await pool.send(f.creator.getSender(), { value: toNano('0.05') }, { $$type: 'EndPresaleEarly' });
+
+    const outsider = await pool.send(f.user2.getSender(), { value: toNano('0.2') }, { $$type: 'BurnUnsoldTokens' });
+    const owner = await pool.send(f.owner.getSender(), { value: toNano('0.2') }, { $$type: 'BurnUnsoldTokens' });
+
+    expect(outsider.transactions).toHaveTransaction({ from: f.user2.address, to: pool.address, success: false });
+    expect(owner.transactions).toHaveTransaction({ from: f.owner.address, to: pool.address, success: true });
   });
 
   it('treats a below-soft-cap sale as failed once end time elapses', async () => {

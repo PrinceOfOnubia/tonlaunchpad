@@ -228,6 +228,7 @@ class TonpadIndexer {
         liquidityTreasury: null,
         platformTonFeeBps: 500,
         platformTokenFeeBps: 100,
+        burnedTokens: 0,
         pendingIndexing: true,
       },
     });
@@ -270,6 +271,7 @@ class TonpadIndexer {
       liquidityTreasury: null,
       platformTonFeeBps: 500,
       platformTokenFeeBps: 100,
+      burnedTokens: 0,
     });
 
     return prisma.launch.create({
@@ -308,6 +310,7 @@ class TonpadIndexer {
         platformTokenFeeTokenTreasuryShare: snapshot.platformTokenFeeTokenTreasuryShare,
         liquidityTonAmount: snapshot.liquidityTonAmount,
         creatorTreasuryAmount: snapshot.creatorTreasuryAmount,
+        burnedTokens: snapshot.burnedTokens,
         pendingIndexing: false,
         lastIndexedAt: args.discoveredAt,
       },
@@ -355,6 +358,7 @@ class TonpadIndexer {
         platformTokenFeeTokenTreasuryShare: snapshot.platformTokenFeeTokenTreasuryShare,
         liquidityTonAmount: snapshot.liquidityTonAmount,
         creatorTreasuryAmount: snapshot.creatorTreasuryAmount,
+        burnedTokens: snapshot.burnedTokens,
         pendingIndexing: false,
         lastIndexedAt: new Date(),
       },
@@ -402,6 +406,7 @@ class TonpadIndexer {
     liquidityTreasury: string | null;
     platformTonFeeBps: number;
     platformTokenFeeBps: number;
+    burnedTokens: number;
   }) {
     if (!launch.tokenMasterAddress || !launch.presalePoolAddress) {
       throw new Error("Launch snapshot requires token and pool addresses");
@@ -459,6 +464,7 @@ class TonpadIndexer {
     const liquidityTonAmount = fromNano(stateStack.readBigNumber());
     const creatorTreasuryAmount = fromNano(stateStack.readBigNumber());
     stateStack.readBoolean(); // tokenFeesRouted
+    const burnedTokensRaw = stateStack.readBigNumber();
 
     tokenStack.readAddress(); // factory
     const tokenName = tokenStack.readString();
@@ -524,6 +530,7 @@ class TonpadIndexer {
       liquidityTreasury: liquidityTreasurySet ? liquidityTreasury : null,
       platformTonFeeBps,
       platformTokenFeeBps,
+      burnedTokens: fromTokenUnits(burnedTokensRaw, decimals),
       platformTokenFeeAmount: fromTokenUnits(platformTokenFeeRaw, decimals),
       platformTokenFeeTonTreasuryShare: fromTokenUnits(platformTokenFeeTonShareRaw, decimals),
       platformTokenFeeTokenTreasuryShare: fromTokenUnits(platformTokenFeeTokenShareRaw, decimals),

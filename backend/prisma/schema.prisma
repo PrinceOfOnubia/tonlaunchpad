@@ -59,6 +59,7 @@ model Launch {
   platformTokenFeeTokenTreasuryShare Float  @default(0)
   liquidityTonAmount      Float         @default(0)
   creatorTreasuryAmount   Float         @default(0)
+  burnedTokens            Float         @default(0)
   social                  Json?
   pendingIndexing         Boolean       @default(true)
   lastIndexedAt           DateTime?

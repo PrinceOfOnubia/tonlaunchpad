@@ -54,4 +54,14 @@ describe("allocation breakdown", () => {
       computeFrontendBreakdown({ ...input, liquidityTreasurySet: true }),
     );
   });
+
+  it("reduces buyer-claimable presale tokens after unsold tokens are burned", () => {
+    const breakdown = computeFrontendBreakdown({
+      ...input,
+      burnedTokens: 90_000_000,
+    });
+
+    expect(breakdown.presaleTokens).toBe(400_000_000);
+    expect(breakdown.burnedTokens).toBe(90_000_000);
+  });
 });

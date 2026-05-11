@@ -4,6 +4,7 @@ import { getTonConnectValidUntil, type LaunchTransaction } from "./tonLaunchpad"
 
 const END_PRESALE_EARLY_OPCODE = 401549937;
 const CANCEL_PRESALE_EARLY_OPCODE = 1419680460;
+const BURN_UNSOLD_TOKENS_OPCODE = 2395240790;
 
 export function buildEndPresaleEarlyTransaction(poolAddress: string): LaunchTransaction {
   return buildPoolAdminTransaction(poolAddress, END_PRESALE_EARLY_OPCODE);
@@ -11,6 +12,10 @@ export function buildEndPresaleEarlyTransaction(poolAddress: string): LaunchTran
 
 export function buildCancelPresaleEarlyTransaction(poolAddress: string): LaunchTransaction {
   return buildPoolAdminTransaction(poolAddress, CANCEL_PRESALE_EARLY_OPCODE);
+}
+
+export function buildBurnUnsoldTokensTransaction(poolAddress: string): LaunchTransaction {
+  return buildPoolAdminTransaction(poolAddress, BURN_UNSOLD_TOKENS_OPCODE);
 }
 
 export async function getPresaleFactoryOwner(poolAddress: string): Promise<string> {
@@ -40,9 +45,10 @@ export function formatTonAddress(value: string) {
 function buildPoolAdminTransaction(poolAddress: string, opcode: number): LaunchTransaction {
   const pool = Address.parse(poolAddress);
   const body = beginCell().storeUint(opcode, 32).endCell();
+  const amount = opcode === BURN_UNSOLD_TOKENS_OPCODE ? "0.2" : "0.05";
   return {
     to: pool.toString(),
-    amountNano: toNano("0.05").toString(),
+    amountNano: toNano(amount).toString(),
     payload: bytesToBase64(body.toBoc()),
     validUntil: getTonConnectValidUntil(),
   };
