@@ -5,7 +5,7 @@ import { useSWRConfig } from "swr";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import { Wallet, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { useMyContribution, useWalletBalance } from "@/lib/hooks";
+import { useMyContribution, useTokenTransactions, useWalletBalance } from "@/lib/hooks";
 import {
   buildContributeTransaction,
   buildCreatorClaimTreasuryTransaction,
@@ -42,8 +42,10 @@ export function PresalePanel({ token }: Props) {
     token.id,
     wallet || null,
   );
+  const { data: recentTransactions } = useTokenTransactions(token.id, 25);
   const { data: walletBalance, isLoading: balanceLoading, mutate: refreshBalance } =
     useWalletBalance(wallet || null);
+  const [creatorTreasuryClaimed, setCreatorTreasuryClaimed] = useState(false);
 
   const numAmount = parseFloat(amount);
   const validAmount = !Number.isNaN(numAmount) && numAmount > 0;
@@ -99,6 +101,16 @@ export function PresalePanel({ token }: Props) {
       cancelled = true;
     };
   }, [token.presalePoolAddress]);
+
+  useEffect(() => {
+    if (!recentTransactions) return;
+    const claimed = recentTransactions.some(
+      (tx) => tx.kind === "treasury" && sameTonAddress(tx.wallet, token.creator),
+    );
+    if (claimed) {
+      setCreatorTreasuryClaimed(true);
+    }
+  }, [recentTransactions, token.creator]);
 
   async function send(boc: LaunchTxDebug) {
     const tx = {
@@ -287,6 +299,7 @@ export function PresalePanel({ token }: Props) {
     try {
       const result = await send(buildCreatorClaimTreasuryTransaction(poolAddress));
       setTxHash(result.boc);
+      setCreatorTreasuryClaimed(true);
       await api.presale
         .recordTreasuryClaim(token.id, {
           wallet,
@@ -312,8 +325,20 @@ export function PresalePanel({ token }: Props) {
       tonConnectUI.openModal();
       return;
     }
+    if (!canManagePresale) {
+      setError("Only the creator or Factory owner can end this presale.");
+      return;
+    }
     const poolAddress = token.presalePoolAddress;
     if (!poolAddress) return;
+    if (presale.raised < presale.softCap) {
+      setError("Soft cap must be met before ending the presale early.");
+      return;
+    }
+    if (!(presale.status === "upcoming" || presale.status === "live")) {
+      setError("This presale has already ended.");
+      return;
+    }
     setBusy("end");
     setError(null);
     try {
@@ -349,8 +374,20 @@ export function PresalePanel({ token }: Props) {
       tonConnectUI.openModal();
       return;
     }
+    if (!canManagePresale) {
+      setError("Only the creator or Factory owner can cancel this presale.");
+      return;
+    }
     const poolAddress = token.presalePoolAddress;
     if (!poolAddress) return;
+    if (presale.raised >= presale.softCap) {
+      setError("Soft cap has been met, so this presale can no longer be cancelled.");
+      return;
+    }
+    if (!(presale.status === "upcoming" || presale.status === "live")) {
+      setError("This presale has already ended.");
+      return;
+    }
     setBusy("cancel");
     setError(null);
     try {
@@ -487,10 +524,10 @@ export function PresalePanel({ token }: Props) {
           </div>
           <button
             onClick={handleClaimTreasury}
-            disabled={busy !== null}
+            disabled={busy !== null || creatorTreasuryClaimed}
             className="btn-primary w-full"
           >
-            {busy === "claim" ? <Spinner /> : "Claim Treasury"}
+            {busy === "claim" ? <Spinner /> : creatorTreasuryClaimed ? "Already claimed" : "Claim Treasury"}
           </button>
         </div>
       )}
