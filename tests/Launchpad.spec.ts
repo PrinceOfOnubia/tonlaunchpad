@@ -1,5 +1,5 @@
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
-import { Address, beginCell, toNano } from '@ton/core';
+import { Address, beginCell, Cell, toNano } from '@ton/core';
 import { readFileSync } from 'fs';
 import '@ton/test-utils';
 import { LaunchpadFactory, LaunchToken } from '../build/Launchpad/Launchpad_LaunchpadFactory';
@@ -128,6 +128,12 @@ async function contribute(
   return pool.send(wallet.getSender(), { value: amount }, { $$type: 'Contribute' });
 }
 
+function readMetadataUrl(cell: Cell) {
+  const slice = cell.beginParse();
+  expect(slice.loadUint(8)).toEqual(1);
+  return slice.loadStringTail();
+}
+
 describe('TONPad public fee architecture', () => {
   it('stores the new factory config and launch record', async () => {
     const f = await fixture();
@@ -159,6 +165,56 @@ describe('TONPad public fee architecture', () => {
     expect(await jettonBalance(f, token, pool.address)).toEqual(
       BUYER_ALLOCATION + PLATFORM_TOKEN_FEE + LIQUIDITY_ALLOCATION,
     );
+  });
+
+  it('deploys creator-provided token metadata on-chain', async () => {
+    const f = await fixture();
+    const metadataUrl = 'https://tonpad.org/uploads/aqua-pad.json';
+    const { token } = await launch(f, {
+      name: 'Aqua Pad',
+      symbol: 'AQUA',
+      description: 'Unique aqua token',
+      metadata: beginCell().storeUint(1, 8).storeStringTail(metadataUrl).endCell(),
+    });
+
+    const metadata = await token.getGetTokenMetadata();
+
+    expect(metadata.name).toEqual('Aqua Pad');
+    expect(metadata.symbol).toEqual('AQUA');
+    expect(metadata.description).toEqual('Unique aqua token');
+    expect(metadata.decimals).toEqual(9n);
+    expect(readMetadataUrl(metadata.metadata)).toEqual(metadataUrl);
+  });
+
+  it('keeps token metadata unique across launches', async () => {
+    const f = await fixture();
+    const first = await launch(f, {
+      name: 'Aqua Pad',
+      symbol: 'AQUA',
+      description: 'First token',
+      metadata: beginCell().storeUint(1, 8).storeStringTail('https://tonpad.org/uploads/aqua.json').endCell(),
+    });
+    const secondConfig = launchConfig(f, {
+      name: 'Zenith',
+      symbol: 'ZNTH',
+      description: 'Second token',
+      metadata: beginCell().storeUint(1, 8).storeStringTail('https://tonpad.org/uploads/zenith.json').endCell(),
+      startTime: BigInt(f.startTime + 1_000),
+      endTime: BigInt(f.endTime + 1_000),
+    });
+    await f.factory.send(f.creator.getSender(), { value: toNano('1') }, secondConfig);
+    const secondRecord = await f.factory.getGetLaunch(1n);
+    const secondToken = f.blockchain.openContract(LaunchpadJettonMaster.fromAddress(secondRecord.token));
+
+    const firstMetadata = await first.token.getGetTokenMetadata();
+    const secondMetadata = await secondToken.getGetTokenMetadata();
+
+    expect(firstMetadata.name).toEqual('Aqua Pad');
+    expect(firstMetadata.symbol).toEqual('AQUA');
+    expect(readMetadataUrl(firstMetadata.metadata)).toEqual('https://tonpad.org/uploads/aqua.json');
+    expect(secondMetadata.name).toEqual('Zenith');
+    expect(secondMetadata.symbol).toEqual('ZNTH');
+    expect(readMetadataUrl(secondMetadata.metadata)).toEqual('https://tonpad.org/uploads/zenith.json');
   });
 
   it('enforces fee caps', async () => {

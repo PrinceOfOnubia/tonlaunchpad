@@ -1,4 +1,5 @@
-import { Address, beginCell, Builder, toNano } from "@ton/core";
+import { Address, beginCell, toNano } from "@ton/core";
+import { storeLaunchToken, type LaunchToken } from "@/build/Launchpad/Launchpad_LaunchpadFactory";
 import type { CreateTokenPayload } from "./types";
 
 export interface LaunchTransaction {
@@ -8,12 +9,11 @@ export interface LaunchTransaction {
   validUntil: number;
 }
 
-const LAUNCH_TOKEN_OPCODE = 2254979422;
 const CONTRIBUTE_OPCODE = 443500403;
 const CREATOR_CLAIM_TREASURY_OPCODE = 1459145241;
 const LAUNCH_VALUE_TON = "1";
 export const DEFAULT_TOKEN_IMAGE_URL = "https://tonpad.org/icon.png";
-const DEFAULT_TOKEN_METADATA_URL = "https://tonpad.org/default-token-metadata.json";
+export const DEFAULT_TOKEN_METADATA_URL = "https://tonpad.org/default-token-metadata.json";
 
 export function getTonConnectValidUntil() {
   return Math.floor(Date.now() / 1000) + 240;
@@ -30,47 +30,29 @@ export function buildLaunchTokenTransaction(
   const creatorAddress = requiredAddress(creatorWallet, "connected wallet address");
   const config = normalizeLaunchConfig(form);
 
-  const metadata = buildOffchainMetadataCell(config.metadataUrl);
+  const message: LaunchToken = {
+    $$type: "LaunchToken",
+    name: config.name,
+    symbol: config.symbol,
+    description: config.description,
+    metadata: buildOffchainMetadataCell(config.metadataUrl),
+    totalSupply: config.totalSupply,
+    decimals: BigInt(config.decimals),
+    presalePercent: BigInt(config.allocations.presale),
+    liquidityPercentTokens: BigInt(config.allocations.liquidity),
+    creatorPercent: BigInt(config.allocations.creator),
+    treasuryAddress: creatorAddress,
+    presaleRate: config.presaleRate,
+    softCap: config.softCap,
+    hardCap: config.hardCap,
+    minContribution: config.minContribution,
+    maxContribution: config.maxContribution,
+    startTime: BigInt(config.startTime),
+    endTime: BigInt(config.endTime),
+    liquidityPercentOfRaised: BigInt(config.liquidityPercentOfRaised),
+  };
 
-  const body = beginCell()
-    .store((builder) => {
-      const b0 = builder;
-      b0.storeUint(LAUNCH_TOKEN_OPCODE, 32);
-      b0.storeStringRefTail(config.name);
-      b0.storeStringRefTail(config.symbol);
-
-      const b1 = new Builder();
-      b1.storeStringRefTail(config.description);
-      b1.storeRef(metadata);
-      b1.storeInt(config.totalSupply, 257);
-      b1.storeInt(BigInt(config.decimals), 257);
-      b1.storeInt(BigInt(config.allocations.presale), 257);
-
-      const b2 = new Builder();
-      b2.storeInt(BigInt(config.allocations.liquidity), 257);
-      b2.storeInt(BigInt(config.allocations.creator), 257);
-      b2.storeAddress(creatorAddress);
-
-      const b3 = new Builder();
-      b3.storeInt(config.presaleRate, 257);
-      b3.storeInt(config.softCap, 257);
-      b3.storeInt(config.hardCap, 257);
-
-      const b4 = new Builder();
-      b4.storeInt(config.minContribution, 257);
-      b4.storeInt(config.maxContribution, 257);
-      b4.storeInt(BigInt(config.startTime), 257);
-      const b5 = new Builder();
-      b5.storeInt(BigInt(config.endTime), 257);
-      b5.storeInt(BigInt(config.liquidityPercentOfRaised), 257);
-
-      b4.storeRef(b5.endCell());
-      b3.storeRef(b4.endCell());
-      b2.storeRef(b3.endCell());
-      b1.storeRef(b2.endCell());
-      b0.storeRef(b1.endCell());
-    })
-    .endCell();
+  const body = beginCell().store(storeLaunchToken(message)).endCell();
 
   return {
     to: factoryAddress.toString(),
@@ -188,6 +170,9 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
   if (form.allocations.presale < platformTokenFeePercent) {
     throw new Error("Presale allocation is too small to cover the platform token fee.");
   }
+  if (!form.metadataUrl?.trim()) {
+    throw new Error("Token metadata is not ready yet. Please try again.");
+  }
   if (hardCap < softCap) throw new Error("Hard cap must be greater than or equal to soft cap.");
   if (minContribution > maxContribution) {
     throw new Error("Min contribution must be less than or equal to max contribution.");
@@ -201,7 +186,7 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
     symbol,
     description,
     imageUrl: form.imageUrl ?? DEFAULT_TOKEN_IMAGE_URL,
-    metadataUrl: form.metadataUrl ?? DEFAULT_TOKEN_METADATA_URL,
+    metadataUrl: form.metadataUrl,
     social: form.social,
     decimals,
     totalSupply: toTokenUnits(totalSupply, decimals),

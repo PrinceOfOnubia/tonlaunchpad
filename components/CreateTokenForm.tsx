@@ -25,6 +25,7 @@ import type { CreateTokenPayload } from "@/lib/types";
 import {
   buildLaunchTokenTransaction,
   DEFAULT_TOKEN_IMAGE_URL,
+  DEFAULT_TOKEN_METADATA_URL,
   getLaunchValidationError,
   normalizeTonConnectError,
 } from "@/lib/tonLaunchpad";
@@ -371,15 +372,17 @@ export function CreateTokenForm() {
         });
         metadataUrl = metadata.url;
       } catch (err) {
-        console.warn("Metadata hosting unavailable; falling back to embedded metadata URL.", err);
-        metadataUrl = null;
+        console.error("Token metadata publishing failed", err);
+        throw new Error(
+          "Token metadata could not be published. Please try again before launching.",
+        );
       }
       const payload: CreateTokenPayload = {
         ...data,
         presale: { ...data.presale, rate: pricing.rate },
         imageUrl,
         bannerUrl,
-        metadataUrl,
+        metadataUrl: metadataUrl ?? DEFAULT_TOKEN_METADATA_URL,
         creator: wallet,
       };
 
