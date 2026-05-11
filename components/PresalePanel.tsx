@@ -11,6 +11,12 @@ import {
   buildCreatorClaimTreasuryTransaction,
   normalizeTonConnectError,
 } from "@/lib/tonLaunchpad";
+import {
+  buildCancelPresaleEarlyTransaction,
+  buildEndPresaleEarlyTransaction,
+  getPresaleFactoryOwner,
+  sameTonAddress,
+} from "@/lib/presaleControls";
 import { hardCapRemaining, useEffectivePresale } from "@/lib/presaleStatus";
 import { cn, formatTon, timeUntil } from "@/lib/utils";
 import type { Token } from "@/lib/types";
@@ -25,10 +31,12 @@ export function PresalePanel({ token }: Props) {
   const [tonConnectUI] = useTonConnectUI();
   const { mutate } = useSWRConfig();
   const [amount, setAmount] = useState("");
-  const [busy, setBusy] = useState<"contribute" | "claim" | "refund" | null>(null);
+  const [busy, setBusy] = useState<"contribute" | "claim" | "refund" | "end" | "cancel" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [poolMissingSince, setPoolMissingSince] = useState<number | null>(null);
+  const [factoryOwner, setFactoryOwner] = useState<string | null>(null);
+  const [ownerLookupFailed, setOwnerLookupFailed] = useState(false);
 
   const { data: myContrib, mutate: refreshContrib } = useMyContribution(
     token.id,
@@ -47,7 +55,9 @@ export function PresalePanel({ token }: Props) {
   const belowMin = min !== undefined && validAmount && numAmount < min;
   const aboveMax = max !== undefined && validAmount && numAmount > max;
   const aboveRemaining = validAmount && numAmount > remaining;
-  const isCreator = !!wallet && wallet.toLowerCase() === token.creator.toLowerCase();
+  const isCreator = !!wallet && sameTonAddress(wallet, token.creator);
+  const isFactoryOwner = !!wallet && !!factoryOwner && sameTonAddress(wallet, factoryOwner);
+  const canManagePresale = isCreator || isFactoryOwner;
   const poolReady = !!token.presalePoolAddress;
   const setupTakingLong =
     presale.status === "live" &&
@@ -62,6 +72,33 @@ export function PresalePanel({ token }: Props) {
       setPoolMissingSince(null);
     }
   }, [poolReady, presale.status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poolAddress = token.presalePoolAddress;
+    if (!poolAddress) {
+      setFactoryOwner(null);
+      setOwnerLookupFailed(false);
+      return;
+    }
+    getPresaleFactoryOwner(poolAddress)
+      .then((owner) => {
+        if (!cancelled) {
+          setFactoryOwner(owner);
+          setOwnerLookupFailed(false);
+        }
+      })
+      .catch((err) => {
+        console.warn("Factory owner lookup unavailable for presale controls.", err);
+        if (!cancelled) {
+          setFactoryOwner(null);
+          setOwnerLookupFailed(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token.presalePoolAddress]);
 
   async function send(boc: LaunchTxDebug) {
     const tx = {
@@ -126,6 +163,25 @@ export function PresalePanel({ token }: Props) {
       const result = await send(boc);
       console.debug("[contribute] sendTransaction result", result);
       setTxHash(result.boc);
+      const nextRaised = Math.min(presale.hardCap, presale.raised + numAmount);
+      if (nextRaised >= presale.hardCap) {
+        await mutate(
+          ["token", token.id],
+          (current?: Token): Token | undefined =>
+            current
+              ? {
+                  ...current,
+                  presale: {
+                    ...current.presale,
+                    raised: nextRaised,
+                    endTime: new Date().toISOString(),
+                    status: "succeeded" as const,
+                  },
+                }
+              : current,
+          false,
+        );
+      }
       await api.presale.recordContribution(token.id, {
         wallet,
         amountTon: numAmount,
@@ -251,6 +307,80 @@ export function PresalePanel({ token }: Props) {
     }
   }
 
+  async function handleEndPresaleEarly() {
+    if (!wallet) {
+      tonConnectUI.openModal();
+      return;
+    }
+    const poolAddress = token.presalePoolAddress;
+    if (!poolAddress) return;
+    setBusy("end");
+    setError(null);
+    try {
+      const result = await send(buildEndPresaleEarlyTransaction(poolAddress));
+      setTxHash(result.boc);
+      await mutate(
+        ["token", token.id],
+        (current?: Token): Token | undefined =>
+          current
+            ? {
+                ...current,
+                presale: {
+                  ...current.presale,
+                  endTime: new Date().toISOString(),
+                  status: "succeeded" as const,
+                },
+              }
+            : current,
+        false,
+      );
+      void mutate(["token", token.id]);
+      void mutate(["txs", token.id, 25]);
+    } catch (err) {
+      console.error("End presale transaction failed", err);
+      setError(normalizeTonConnectError(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleCancelPresaleEarly() {
+    if (!wallet) {
+      tonConnectUI.openModal();
+      return;
+    }
+    const poolAddress = token.presalePoolAddress;
+    if (!poolAddress) return;
+    setBusy("cancel");
+    setError(null);
+    try {
+      const result = await send(buildCancelPresaleEarlyTransaction(poolAddress));
+      setTxHash(result.boc);
+      await mutate(
+        ["token", token.id],
+        (current?: Token): Token | undefined =>
+          current
+            ? {
+                ...current,
+                presale: {
+                  ...current.presale,
+                  endTime: new Date().toISOString(),
+                  status: "failed" as const,
+                },
+              }
+            : current,
+        false,
+      );
+      void mutate(["token", token.id]);
+      void mutate(["txs", token.id, 25]);
+    } catch (err) {
+      console.error("Cancel presale transaction failed", err);
+      setError(normalizeTonConnectError(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Rendering by status
   // -------------------------------------------------------------------------
@@ -292,6 +422,38 @@ export function PresalePanel({ token }: Props) {
           walletBalanceTon={walletBalance?.balanceTon}
           balanceLoading={balanceLoading}
         />
+      )}
+
+      {canManagePresale && poolReady && (presale.status === "upcoming" || presale.status === "live") && (
+        <div className="space-y-3 rounded-xl bg-ink-50 p-4 ring-1 ring-ink-100">
+          <div>
+            <div className="text-sm font-semibold text-ink-800">Creator controls</div>
+            <div className="mt-1 text-xs text-ink-600">
+              End a soft-cap sale early or cancel before soft cap if needed.
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              onClick={handleEndPresaleEarly}
+              disabled={busy !== null || presale.raised < presale.softCap}
+              className="btn-primary w-full"
+            >
+              {busy === "end" ? <Spinner /> : "End Presale"}
+            </button>
+            <button
+              onClick={handleCancelPresaleEarly}
+              disabled={busy !== null || presale.raised >= presale.softCap}
+              className="btn-ghost w-full"
+            >
+              {busy === "cancel" ? <Spinner /> : "Cancel Presale"}
+            </button>
+          </div>
+          {ownerLookupFailed && !isCreator && (
+            <div className="text-xs text-ink-500">
+              Factory owner check is temporarily unavailable. Creator controls remain available.
+            </div>
+          )}
+        </div>
       )}
 
       {presale.status === "succeeded" && myContrib && myContrib.tokensOwed > 0 && (
