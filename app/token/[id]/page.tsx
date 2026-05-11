@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, AtSign, ExternalLink, Globe, Loader2, Send, Music2 } from "lucide-react";
+import { ArrowLeft, AtSign, Check, Copy, ExternalLink, Globe, Loader2, Send, Music2 } from "lucide-react";
 import { useToken } from "@/lib/hooks";
 import { cn, formatCompact, formatPercent, formatPrice, formatTon, shortAddress } from "@/lib/utils";
 import { TokenChart } from "@/components/TokenChart";
@@ -18,16 +18,6 @@ export default function TokenPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const { data: token, isLoading, error } = useToken(id);
-
-  useEffect(() => {
-    if (token) {
-      console.debug("[token-page] received pool address", {
-        id: token.id,
-        presalePoolAddress: token.presalePoolAddress ?? null,
-        tokenMasterAddress: token.address ?? null,
-      });
-    }
-  }, [token]);
 
   if (isLoading) {
     return (
@@ -71,15 +61,6 @@ function TokenContent({ token }: { token: Token }) {
       </Link>
 
       <TokenHeader token={effectiveToken} />
-      {process.env.NODE_ENV !== "production" && (
-        <div className="mt-3 grid gap-1 rounded-lg bg-ink-50 px-3 py-2 font-mono text-xs text-ink-500 ring-1 ring-ink-100">
-          <div>Factory: {effectiveToken.factoryAddress || effectiveToken.address || "missing"}</div>
-          <div>Launch ID: {effectiveToken.id}</div>
-          <div>Pool: {effectiveToken.presalePoolAddress || "missing"}</div>
-          <div>Token Master: {effectiveToken.tokenMasterAddress || effectiveToken.address || "missing"}</div>
-          <div>Backend record updated: {effectiveToken.presalePoolAddress ? "yes" : "no"}</div>
-        </div>
-      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -107,7 +88,14 @@ function TokenHeader({ token }: { token: Token }) {
   const positive = token.priceChange24h >= 0;
   const [imageFailed, setImageFailed] = useState(false);
   const [bannerFailed, setBannerFailed] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const initials = (token.symbol || "TK").slice(0, 2).toUpperCase();
+
+  async function copyAddress(label: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopied(label);
+    window.setTimeout(() => setCopied(null), 1500);
+  }
 
   return (
     <div className="glass overflow-hidden">
@@ -154,17 +142,26 @@ function TokenHeader({ token }: { token: Token }) {
           )}
 
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-            {token.address && (
-              <a
-                href={tonviewerAddressUrl(token.address)}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-1 font-mono text-ink-600 hover:bg-ink-200"
-              >
-                {shortAddress(token.address, 6, 4)}
-                <ExternalLink size={11} />
-              </a>
+            {token.address ? (
+              <AddressChip
+                label="CA"
+                value={token.address}
+                copied={copied === "ca"}
+                onCopy={() => copyAddress("ca", token.address!)}
+              />
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-1 font-mono text-ink-500">
+                CA Pending
+              </span>
             )}
+            {token.presalePoolAddress ? (
+              <AddressChip
+                label="Pool"
+                value={token.presalePoolAddress}
+                copied={copied === "pool"}
+                onCopy={() => copyAddress("pool", token.presalePoolAddress!)}
+              />
+            ) : null}
             {token.social.website && (
               <a
                 href={token.social.website}
@@ -244,6 +241,41 @@ function TokenHeader({ token }: { token: Token }) {
       </div>
       </div>
     </div>
+  );
+}
+
+function AddressChip({
+  label,
+  value,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-1 font-mono text-ink-600">
+      <span className="text-[10px] uppercase tracking-wide text-ink-400">{label}</span>
+      <a
+        href={tonviewerAddressUrl(value)}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="inline-flex items-center gap-1 hover:text-ton-600"
+      >
+        {shortAddress(value, 6, 4)}
+        <ExternalLink size={11} />
+      </a>
+      <button
+        type="button"
+        onClick={onCopy}
+        className="rounded-sm p-0.5 text-ink-400 transition-colors hover:text-ton-600"
+        aria-label={`Copy ${label} address`}
+      >
+        {copied ? <Check size={11} /> : <Copy size={11} />}
+      </button>
+    </span>
   );
 }
 

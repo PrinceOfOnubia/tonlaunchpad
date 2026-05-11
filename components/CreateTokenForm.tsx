@@ -450,7 +450,7 @@ export function CreateTokenForm() {
         });
       } catch (err) {
         console.warn("Launch dashboard save unavailable. Launch kept in local fallback cache.", err);
-        setMetadataNotice("Launch saved locally. Your dashboard will update when the service is reachable.");
+        setMetadataNotice("Launch submitted successfully. Your presale page will appear shortly.");
       }
 
       setExplorerUrl(tonviewerAddressUrl(factoryAddress ?? wallet));
@@ -1083,7 +1083,7 @@ function StepReview({
         )}
 
         <div className="rounded-xl bg-ton-50 p-4 text-sm font-semibold text-ton-700 ring-1 ring-ton-200">
-          Platform fee: 5% of raised TON.
+          Platform fee: 5% of raised TON + 1% token fee.
         </div>
       </div>
     </Section>

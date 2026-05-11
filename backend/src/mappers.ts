@@ -18,7 +18,7 @@ export function computeStatus(launch: Pick<Launch, "startTime" | "endTime" | "ra
 export function launchToToken(launch: Launch) {
   return {
     id: launch.id,
-    address: launch.tokenMasterAddress ?? launch.presalePoolAddress ?? launch.factoryAddress,
+    address: launch.tokenMasterAddress ?? null,
     presalePoolAddress: launch.presalePoolAddress,
     tokenMasterAddress: launch.tokenMasterAddress,
     factoryAddress: launch.factoryAddress,

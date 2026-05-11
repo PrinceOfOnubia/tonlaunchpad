@@ -2,7 +2,8 @@
 
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
-const MANIFEST_URL = "https://tonlaunchpad.vercel.app/tonconnect-manifest.json";
+const MANIFEST_URL =
+  process.env.NEXT_PUBLIC_TONCONNECT_MANIFEST_URL ?? "https://tonpad.org/tonconnect-manifest.json";
 
 /**
  * Client-side TonConnect provider using the production manifest.

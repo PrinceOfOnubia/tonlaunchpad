@@ -9,11 +9,11 @@ TonPad is a classic manual-liquidity launchpad: creators deploy a Jetton and pre
 Fees are enforced by the smart contract on successful presales:
 
 - `5%` of total TON raised goes to the platform treasury.
-- `1%` of the presale token allocation goes to the platform Jetton wallet.
+- `1%` of total token supply is deducted from the presale allocation only and split 50/50 between the platform TON treasury and platform token treasury.
 - The creator can claim raised TON remaining after the platform fee after success.
 - Failed presales do not pay the TON platform fee.
 
-Example: a sale raising `1000 TON` pays `50 TON` to the platform and `950 TON` to the creator treasury. A `500,000,000` token presale allocation sends `5,000,000` tokens to the platform and leaves `495,000,000` tokens for buyers.
+Example: a sale raising `1000 TON` pays `50 TON` to the platform and routes the remaining TON between creator treasury and manual liquidity. A `1,000,000,000` total supply with `50%` presale allocation deducts `10,000,000` platform-fee tokens from the presale allocation, leaving `490,000,000` for buyers.
 
 ## Frontend Quick Start
 
@@ -47,7 +47,7 @@ PLATFORM_TON_TREASURY=
 PLATFORM_TOKEN_TREASURY=
 NETWORK=mainnet
 PORT=4000
-FRONTEND_ORIGIN=https://tonlaunchpad.vercel.app
+FRONTEND_ORIGIN=https://tonpad.org
 BACKEND_PUBLIC_URL=
 PUBLIC_UPLOAD_BASE_URL=
 UPLOAD_DIR=backend/uploads
@@ -71,7 +71,7 @@ UPLOAD_DIR=backend/uploads
 
 Compiled from `contracts/Launchpad.tact`:
 
-- `LaunchpadFactory`: receives the create config, deploys the Jetton master and `PresalePool`, mints buyer allocation to the pool, platform token fee to the platform treasury, and creator-managed tokens to the creator.
+- `LaunchpadFactory`: receives the create config, deploys the Jetton master and `PresalePool`, snapshots fee BPS, and keeps treasury routing global and updatable.
 - `LaunchpadJettonMaster`: TEP-74 compatible Jetton master.
 - `JettonWallet`: deterministic TEP-74 compatible Jetton wallet.
 - `PresalePool`: accepts contributions, enforces caps/windows, handles user claims, refunds, failed-token recovery, and creator treasury claims.
@@ -81,13 +81,13 @@ Compiled from `contracts/Launchpad.tact`:
 1. Creator submits `LaunchToken` to `LaunchpadFactory`.
 2. Factory deploys Jetton master and pool.
 3. Factory mints:
-   - `99%` of the presale allocation to the pool for buyers.
-   - `1%` of the presale allocation to the platform treasury.
-   - creator allocation plus manual-liquidity allocation to the creator.
+   - usable buyer allocation to the pool,
+   - platform token fee plus liquidity allocation to the pool for later routing,
+   - creator allocation to the creator wallet.
 4. Users contribute TON while the sale is live.
 5. If `totalRaised >= softCap`, users can claim Jettons directly from the pool.
 6. Creator calls `CreatorClaimTreasury` or `WithdrawTreasury`.
-7. Pool sends `5%` of raised TON to the platform TON treasury and the remaining TON to creator treasury.
+7. Pool routes `5%` of raised TON to the current platform TON treasury, routes liquidity TON to the current liquidity treasury if configured, and sends the creator treasury remainder to the creator treasury wallet.
 8. If the sale fails or is cancelled, users refund TON and creator can recover unsold buyer tokens.
 
 There is no post-sale automation in this architecture. Creator liquidity is handled manually outside the presale pool.

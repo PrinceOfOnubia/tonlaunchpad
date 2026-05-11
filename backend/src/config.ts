@@ -8,12 +8,13 @@ export const config = {
   factoryAddress: process.env.FACTORY_ADDRESS ?? "",
   platformTonTreasury: process.env.PLATFORM_TON_TREASURY ?? "",
   platformTokenTreasury: process.env.PLATFORM_TOKEN_TREASURY ?? "",
+  liquidityTreasury: process.env.LIQUIDITY_TREASURY ?? "",
   platformTonFeeBps: Number(process.env.PLATFORM_TON_FEE_BPS ?? 500),
   platformTokenFeeBps: Number(process.env.PLATFORM_TOKEN_FEE_BPS ?? 100),
   network: process.env.NETWORK ?? "testnet",
   port: Number(process.env.PORT ?? 4000),
   host: process.env.HOST ?? "0.0.0.0",
-  frontendOrigin: process.env.CORS_ORIGIN ?? process.env.FRONTEND_ORIGIN ?? "https://tonlaunchpad.vercel.app",
+  frontendOrigin: process.env.CORS_ORIGIN ?? process.env.FRONTEND_ORIGIN ?? "https://tonpad.org",
   publicBaseUrl: (
     process.env.PUBLIC_UPLOAD_BASE_URL ??
     process.env.BACKEND_PUBLIC_URL ??

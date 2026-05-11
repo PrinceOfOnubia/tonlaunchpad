@@ -29,7 +29,6 @@ export function PresalePanel({ token }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [poolMissingSince, setPoolMissingSince] = useState<number | null>(null);
-  const [lastContributeTx, setLastContributeTx] = useState<LaunchTxDebug | null>(null);
 
   const { data: myContrib, mutate: refreshContrib } = useMyContribution(
     token.id,
@@ -107,7 +106,6 @@ export function PresalePanel({ token }: Props) {
     try {
       const boc = buildContributeTransaction(poolAddress, numAmount);
       attemptedTx = boc;
-      setLastContributeTx(boc);
       console.debug("[contribute] sendTransaction payload", {
         wallet,
         connected: tonConnectUI.connected,
@@ -128,21 +126,19 @@ export function PresalePanel({ token }: Props) {
       const result = await send(boc);
       console.debug("[contribute] sendTransaction result", result);
       setTxHash(result.boc);
-      api.presale.recordContribution(token.id, {
+      await api.presale.recordContribution(token.id, {
         wallet,
         amountTon: numAmount,
         tokenAmount: tokensReceived,
         txHash: result.boc,
         transactionBoc: result.boc,
       })
-        .then(() => {
-          void mutate(["token", token.id]);
-          void mutate(["txs", token.id, 25]);
-          void mutate(["profile", wallet]);
-          void mutate(["myContrib", token.id, wallet]);
-          void mutate(["stats"]);
-        })
         .catch((err) => console.warn("Contribution record unavailable; waiting for indexer.", err));
+      void mutate(["token", token.id]);
+      void mutate(["txs", token.id, 25]);
+      void mutate(["profile", wallet]);
+      void mutate(["myContrib", token.id, wallet]);
+      void mutate(["stats"]);
       setAmount("");
       refreshContrib();
       refreshBalance();
@@ -173,7 +169,18 @@ export function PresalePanel({ token }: Props) {
       const boc = await api.presale.claim(token.id, wallet);
       const result = await send(boc);
       setTxHash(result.boc);
+      await api.presale
+        .recordClaim(token.id, {
+          wallet,
+          txHash: result.boc,
+          transactionBoc: result.boc,
+        })
+        .catch((err) => console.warn("Claim record unavailable; waiting for indexer.", err));
+      void mutate(["token", token.id]);
+      void mutate(["txs", token.id, 25]);
+      void mutate(["profile", wallet]);
       refreshContrib();
+      refreshBalance();
     } catch (err) {
       console.error("Claim transaction failed", err);
       setError(err instanceof ApiError ? err.message : normalizeTonConnectError(err));
@@ -190,7 +197,18 @@ export function PresalePanel({ token }: Props) {
       const boc = await api.presale.refund(token.id, wallet);
       const result = await send(boc);
       setTxHash(result.boc);
+      await api.presale
+        .recordRefund(token.id, {
+          wallet,
+          txHash: result.boc,
+          transactionBoc: result.boc,
+        })
+        .catch((err) => console.warn("Refund record unavailable; waiting for indexer.", err));
+      void mutate(["token", token.id]);
+      void mutate(["txs", token.id, 25]);
+      void mutate(["profile", wallet]);
       refreshContrib();
+      refreshBalance();
     } catch (err) {
       console.error("Refund transaction failed", err);
       setError(err instanceof ApiError ? err.message : normalizeTonConnectError(err));
@@ -213,6 +231,18 @@ export function PresalePanel({ token }: Props) {
     try {
       const result = await send(buildCreatorClaimTreasuryTransaction(poolAddress));
       setTxHash(result.boc);
+      await api.presale
+        .recordTreasuryClaim(token.id, {
+          wallet,
+          txHash: result.boc,
+          transactionBoc: result.boc,
+        })
+        .catch((err) => console.warn("Treasury record unavailable; waiting for indexer.", err));
+      void mutate(["token", token.id]);
+      void mutate(["txs", token.id, 25]);
+      void mutate(["profile", wallet]);
+      void mutate(["stats"]);
+      refreshBalance();
     } catch (err) {
       console.error("Creator treasury claim failed", err);
       setError(normalizeTonConnectError(err));
@@ -259,8 +289,6 @@ export function PresalePanel({ token }: Props) {
           busy={busy === "contribute"}
           onSubmit={handleContribute}
           endTime={presale.endTime}
-          debugTx={lastContributeTx ?? contributionDebugTx(token.presalePoolAddress, numAmount)}
-          tonConnectStatus={tonConnectUI.connected ? "connected" : "disconnected"}
           walletBalanceTon={walletBalance?.balanceTon}
           balanceLoading={balanceLoading}
         />
@@ -370,8 +398,6 @@ function ContributeForm(props: {
   busy: boolean;
   onSubmit: () => void;
   endTime: string;
-  debugTx: LaunchTxDebug | null;
-  tonConnectStatus: string;
   walletBalanceTon?: number;
   balanceLoading: boolean;
 }) {
@@ -462,17 +488,6 @@ function ContributeForm(props: {
       <div className="text-center text-[11px] text-ink-500">
         Ends in <span className="font-medium text-ink-700">{timeUntil(props.endTime)}</span>
       </div>
-
-      {process.env.NODE_ENV !== "production" && (
-        <div className="space-y-1 rounded-lg bg-ink-50 p-3 font-mono text-[11px] text-ink-500 ring-1 ring-ink-100">
-          <div>Pool address: {props.debugTx?.to ?? "missing"}</div>
-          <div>Amount nanotons: {props.debugTx?.amountNano ?? "missing"}</div>
-          <div>Wallet connected: {props.wallet ? "yes" : "no"}</div>
-          <div>Tx body present: {props.debugTx?.payload ? "yes" : "no"}</div>
-          <div>validUntil: {props.debugTx?.validUntil ?? "missing"}</div>
-          <div>TonConnect status: {props.tonConnectStatus}</div>
-        </div>
-      )}
     </div>
   );
 }
@@ -512,15 +527,6 @@ type LaunchTxDebug = {
   payload: string;
   validUntil: number;
 };
-
-function contributionDebugTx(poolAddress: string | null | undefined, amountTon: number) {
-  if (!poolAddress || !Number.isFinite(amountTon) || amountTon <= 0) return null;
-  try {
-    return buildContributeTransaction(poolAddress, amountTon);
-  } catch {
-    return null;
-  }
-}
 
 function withWalletTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {

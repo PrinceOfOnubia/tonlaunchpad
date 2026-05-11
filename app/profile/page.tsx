@@ -140,6 +140,17 @@ function PortfolioTab({ wallet }: { wallet: string }) {
 }
 
 function HoldingRow({ h }: { h: PortfolioHolding }) {
+  const allocationLabel =
+    h.allocationType === "wallet"
+      ? "Wallet balance"
+      : h.allocationType === "projected_creator"
+        ? "Expected creator allocation"
+        : h.allocationType === "claimable"
+          ? "Claimable from presale"
+          : h.allocationType === "presale"
+            ? "Presale position"
+            : null;
+
   return (
     <Link
       href={`/token/${h.tokenId}`}
@@ -153,12 +164,15 @@ function HoldingRow({ h }: { h: PortfolioHolding }) {
           {h.symbol.slice(0, 2).toUpperCase()}
         </div>
       )}
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-ink-900">{h.name}</div>
-        <div className="font-mono text-xs text-ink-500">
-          {h.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} {h.symbol}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-ink-900">{h.name}</div>
+          <div className="font-mono text-xs text-ink-500">
+            {h.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} {h.symbol}
+          </div>
+          {allocationLabel ? (
+            <div className="mt-0.5 text-[11px] text-ink-400">{allocationLabel}</div>
+          ) : null}
         </div>
-      </div>
       <div className="text-right">
         <div className="font-mono text-sm font-semibold text-ink-900">{formatTon(h.valueTon)}</div>
         <div

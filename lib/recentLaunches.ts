@@ -125,7 +125,7 @@ export function tokenFromLaunchInput(args: {
 }): Token {
   return normalizeToken({
     id: args.id,
-    address: args.factoryAddress ?? null,
+    address: null,
     presalePoolAddress: null,
     tokenMasterAddress: null,
     factoryAddress: args.factoryAddress ?? null,

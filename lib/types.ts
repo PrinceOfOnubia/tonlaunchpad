@@ -144,7 +144,7 @@ export interface PortfolioHolding {
   amount: number;
   valueTon: number;
   pnlPercent: number;
-  allocationType?: "creator" | "presale" | "claimable";
+  allocationType?: "wallet" | "projected_creator" | "presale" | "claimable";
 }
 
 export interface UserPortfolio {

@@ -3,5 +3,5 @@
   "symbol": "TONPAD",
   "description": "A token launch created with TONPad.",
   "decimals": 9,
-  "image": "https://tonlaunchpad.vercel.app/icon.png"
+  "image": "https://tonpad.org/icon.png"
 }

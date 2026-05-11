@@ -12,8 +12,8 @@ const LAUNCH_TOKEN_OPCODE = 2254979422;
 const CONTRIBUTE_OPCODE = 443500403;
 const CREATOR_CLAIM_TREASURY_OPCODE = 1459145241;
 const LAUNCH_VALUE_TON = "1";
-export const DEFAULT_TOKEN_IMAGE_URL = "https://tonlaunchpad.vercel.app/icon.png";
-const DEFAULT_TOKEN_METADATA_URL = "https://tonlaunchpad.vercel.app/default-token-metadata.json";
+export const DEFAULT_TOKEN_IMAGE_URL = "https://tonpad.org/icon.png";
+const DEFAULT_TOKEN_METADATA_URL = "https://tonpad.org/default-token-metadata.json";
 
 export function getTonConnectValidUntil() {
   return Math.floor(Date.now() / 1000) + 240;
@@ -99,7 +99,7 @@ export function buildCreatorClaimTreasuryTransaction(poolAddress: string): Launc
   const body = beginCell().storeUint(CREATOR_CLAIM_TREASURY_OPCODE, 32).endCell();
   return {
     to: pool.toString(),
-    amountNano: toNano("0.05").toString(),
+    amountNano: toNano("1").toString(),
     payload: bytesToBase64(body.toBoc()),
     validUntil: getTonConnectValidUntil(),
   };
@@ -184,6 +184,10 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
   if (form.allocations.presale + form.allocations.liquidity + form.allocations.creator !== 100) {
     throw new Error("Token allocations must sum to exactly 100%.");
   }
+  const platformTokenFeePercent = 1;
+  if (form.allocations.presale < platformTokenFeePercent) {
+    throw new Error("Presale allocation is too small to cover the platform token fee.");
+  }
   if (hardCap < softCap) throw new Error("Hard cap must be greater than or equal to soft cap.");
   if (minContribution > maxContribution) {
     throw new Error("Min contribution must be less than or equal to max contribution.");
@@ -213,7 +217,7 @@ function normalizeLaunchConfig(form: CreateTokenPayload) {
     maxContribution: toNano(maxContribution.toString()),
     startTime,
     endTime,
-    liquidityPercentOfRaised: integerInRange(form.liquidityPercent, "Liquidity percent", 0, 100),
+    liquidityPercentOfRaised: integerInRange(form.liquidityPercent, "Liquidity percent", 0, 100) * 100,
   };
 }
 

@@ -181,6 +181,24 @@ export const api = {
         method: "POST",
         body: payload,
       }),
+
+    recordClaim: (tokenId: string, payload: { wallet: string; txHash?: string; transactionBoc?: string }) =>
+      request<Transaction>(`/tokens/${encodeURIComponent(tokenId)}/presale/claim/record`, {
+        method: "POST",
+        body: payload,
+      }),
+
+    recordRefund: (tokenId: string, payload: { wallet: string; txHash?: string; transactionBoc?: string }) =>
+      request<Transaction>(`/tokens/${encodeURIComponent(tokenId)}/presale/refund/record`, {
+        method: "POST",
+        body: payload,
+      }),
+
+    recordTreasuryClaim: (tokenId: string, payload: { wallet: string; txHash?: string; transactionBoc?: string }) =>
+      request<Transaction>(`/tokens/${encodeURIComponent(tokenId)}/presale/treasury/record`, {
+        method: "POST",
+        body: payload,
+      }),
   },
 
   stats: {
