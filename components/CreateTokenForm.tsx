@@ -369,6 +369,7 @@ export function CreateTokenForm() {
           description: data.description,
           decimals: data.decimals,
           imageUrl,
+          socials: data.social,
         });
         metadataUrl = metadata.metadataUrl ?? metadata.url ?? metadata.uri ?? null;
         console.debug("[launch] metadata publish result", metadata);
@@ -377,11 +378,7 @@ export function CreateTokenForm() {
         }
       } catch (err) {
         console.error("Token metadata publishing failed", err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Token metadata could not be published. Please try again before launching.",
-        );
+        setError("Could not publish token metadata. Please try again.");
         setDeployStatus(null);
         return;
       }

@@ -37,6 +37,48 @@ interface RequestOpts {
   isFormData?: boolean;
 }
 
+async function requestSameOrigin<T>(path: string, opts: RequestOpts = {}): Promise<T> {
+  const headers: Record<string, string> = {};
+  let body: BodyInit | undefined;
+
+  if (opts.isFormData) {
+    body = opts.body as FormData;
+  } else if (opts.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(opts.body);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: opts.method ?? "GET",
+      headers,
+      body,
+      signal: opts.signal,
+      credentials: "same-origin",
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!res.ok) {
+    let errBody: unknown;
+    try {
+      errBody = await res.json();
+    } catch {
+      /* ignore */
+    }
+    const msg =
+      (errBody && typeof errBody === "object" && "message" in errBody
+        ? String((errBody as { message: unknown }).message)
+        : null) ?? res.statusText;
+    throw new ApiError(res.status, msg, errBody);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
 async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   if (!API_URL) {
     throw new ApiError(
@@ -262,8 +304,16 @@ export const api = {
       description: string;
       decimals: number;
       imageUrl: string;
+      socials?: {
+        website?: string;
+        twitter?: string;
+        telegram?: string;
+        youtube?: string;
+        tiktok?: string;
+        github?: string;
+      };
     }) =>
-      request<{ url?: string; metadataUrl?: string; uri?: string }>("/metadata", {
+      requestSameOrigin<{ url?: string; metadataUrl?: string; uri?: string }>("/api/metadata", {
         method: "POST",
         body: payload,
       }),

@@ -9,16 +9,24 @@ import { prisma } from "./db";
 const app = express();
 app.set("trust proxy", true);
 
+const allowedOrigins = new Set(
+  [config.frontendOrigin, "https://tonpad.org", "https://www.tonpad.org"]
+    .filter(Boolean)
+    .map((origin) => origin.replace(/\/$/, "")),
+);
+
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || origin === config.frontendOrigin) {
+      if (!origin || allowedOrigins.has(origin.replace(/\/$/, ""))) {
         callback(null, true);
         return;
       }
       callback(new Error("CORS origin not allowed"));
     },
     credentials: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 app.use(express.json({ limit: "1mb" }));
