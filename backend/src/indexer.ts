@@ -7,6 +7,13 @@ import { computeStatus } from "./mappers";
 import { addressVariants } from "./address";
 
 const NANO = 1_000_000_000;
+const FAST_POLL_LIMIT = 6;
+const FULL_POLL_LIMIT = 24;
+const REFRESH_LIMIT = 3;
+const REFRESH_STALE_MS = 20_000;
+const METHOD_DELAY_MS = 120;
+
+type ReconcileMode = "fast" | "full";
 
 export function startIndexer() {
   if (!config.indexerEnabled) {
@@ -23,10 +30,13 @@ export function startIndexer() {
   setInterval(() => void indexer.tick(), config.indexerIntervalMs).unref();
 }
 
-export async function reconcileFactoryLaunches() {
+export async function reconcileFactoryLaunches(options: { mode?: ReconcileMode } = {}) {
   const indexer = new TonpadIndexer();
-  await indexer.pollFactory();
-  await indexer.refreshLaunches();
+  const mode = options.mode ?? "full";
+  await indexer.pollFactory({ mode });
+  if (mode === "full") {
+    await indexer.refreshLaunches({ maxLaunches: REFRESH_LIMIT, includeHolders: true });
+  }
 }
 
 class TonpadIndexer {
@@ -44,8 +54,8 @@ class TonpadIndexer {
         network: config.network,
         factoryAddress: config.factoryAddress,
       });
-      await this.pollFactory();
-      await this.refreshLaunches();
+      await this.pollFactory({ mode: "full" });
+      await this.refreshLaunches({ maxLaunches: REFRESH_LIMIT, includeHolders: true });
       console.log("[indexer] tick complete");
     } catch (err) {
       console.warn("[indexer] tick failed", err);
@@ -54,7 +64,8 @@ class TonpadIndexer {
     }
   }
 
-  async pollFactory() {
+  async pollFactory(options: { mode?: ReconcileMode; maxLaunches?: number } = {}) {
+    const mode = options.mode ?? "full";
     const factory = Address.parse(config.factoryAddress);
     const countResult = await this.client.runMethod(factory, "getLaunchCount");
     const launchCount = Number(countResult.stack.readBigNumber());
@@ -64,7 +75,12 @@ class TonpadIndexer {
     });
     if (!Number.isFinite(launchCount) || launchCount <= 0) return;
 
-    for (let i = 0; i < launchCount; i += 1) {
+    const launchIndexes = buildLaunchIndexes(
+      launchCount,
+      options.maxLaunches ?? (mode === "fast" ? FAST_POLL_LIMIT : FULL_POLL_LIMIT),
+    );
+
+    for (const i of launchIndexes) {
       try {
         const result = await this.client.runMethod(factory, "getLaunch", [{ type: "int", value: BigInt(i) }]);
         const tokenMasterAddress = result.stack.readAddress().toString();
@@ -92,10 +108,8 @@ class TonpadIndexer {
               presalePoolAddress,
               creatorWallet,
               factoryAddress: config.factoryAddress,
-          pendingIndexing: false,
-          lastIndexedAt: discoveredAt,
-          social: Prisma.JsonNull,
-        },
+              pendingIndexing: false,
+            },
           });
           console.log("[indexer] reconciled launch", {
             id: updated.id,
@@ -104,158 +118,258 @@ class TonpadIndexer {
             presalePoolAddress,
             tokenMasterAddress,
           });
+          if (mode === "full" && shouldRefreshLaunch(updated)) {
+            await this.hydrateLaunch(updated, { includeHolders: false });
+          }
+          await pause(METHOD_DELAY_MS);
           continue;
         }
 
-        const snapshot = await this.loadLaunchSnapshot({
-          id: `factory-${i}`,
-          factoryAddress: config.factoryAddress,
-          tokenMasterAddress,
-          presalePoolAddress,
-          creatorWallet,
-          tokenName: `TONPad Launch ${i + 1}`,
-          symbol: `TON${i + 1}`,
-          description: "",
-          logoUrl: "https://tonpad.org/icon.png",
-          metadataUrl: null,
-          softCap: 0,
-          hardCap: 0,
-          raisedTon: 0,
-          liquidityPercent: 0,
-          startTime: discoveredAt,
-          endTime: new Date(discoveredAt.getTime() + 60 * 60 * 1000),
-          totalSupply: 0,
-          decimals: 9,
-          presaleRate: 0,
-          minContribution: null,
-          maxContribution: null,
-          presaleAllocation: 0,
-          liquidityAllocation: 0,
-          creatorAllocation: 0,
-          platformTonTreasury: null,
-          platformTokenTreasury: null,
-          liquidityTreasury: null,
-          platformTonFeeBps: 500,
-          platformTokenFeeBps: 100,
-        });
-
-        const created = await prisma.launch.create({
-          data: {
-            tokenName: snapshot.tokenName,
-            symbol: snapshot.symbol,
-            description: snapshot.description,
-            logoUrl: snapshot.logoUrl,
-            metadataUrl: snapshot.metadataUrl,
-            creatorWallet,
-            factoryAddress: config.factoryAddress,
-            tokenMasterAddress,
-            presalePoolAddress,
-            softCap: snapshot.softCap,
-            hardCap: snapshot.hardCap,
-            raisedTon: snapshot.raisedTon,
-            liquidityPercent: snapshot.liquidityPercent,
-            status: snapshot.status,
-            startTime: snapshot.startTime,
-            endTime: snapshot.endTime,
-            totalSupply: snapshot.totalSupply,
-            decimals: snapshot.decimals,
-            presaleRate: snapshot.presaleRate,
-            minContribution: snapshot.minContribution,
-            maxContribution: snapshot.maxContribution,
-            presaleAllocation: snapshot.presaleAllocation,
-            liquidityAllocation: snapshot.liquidityAllocation,
-            creatorAllocation: snapshot.creatorAllocation,
-            platformTonTreasury: snapshot.platformTonTreasury,
-            platformTokenTreasury: snapshot.platformTokenTreasury,
-            liquidityTreasury: snapshot.liquidityTreasury,
-            platformTonFeeBps: snapshot.platformTonFeeBps,
-            platformTokenFeeBps: snapshot.platformTokenFeeBps,
-            platformTokenFeeAmount: snapshot.platformTokenFeeAmount,
-            platformTokenFeeTonTreasuryShare: snapshot.platformTokenFeeTonTreasuryShare,
-            platformTokenFeeTokenTreasuryShare: snapshot.platformTokenFeeTokenTreasuryShare,
-            liquidityTonAmount: snapshot.liquidityTonAmount,
-            creatorTreasuryAmount: snapshot.creatorTreasuryAmount,
-            pendingIndexing: false,
-            lastIndexedAt: discoveredAt,
-          },
-        });
+        const created = mode === "full"
+          ? await this.createHydratedLaunch({
+              index: i,
+              discoveredAt,
+              tokenMasterAddress,
+              presalePoolAddress,
+              creatorWallet,
+            })
+          : await this.createPlaceholderLaunch({
+              index: i,
+              discoveredAt,
+              tokenMasterAddress,
+              presalePoolAddress,
+              creatorWallet,
+            });
         console.log("[indexer] discovered launch", {
           id: created.id,
           presalePoolAddress,
           tokenMasterAddress,
+          pendingIndexing: created.pendingIndexing,
         });
+        await pause(METHOD_DELAY_MS);
       } catch (err) {
         console.warn(`[indexer] failed to read factory launch ${i}`, err);
+        if (isRateLimitError(err)) {
+          console.warn("[indexer] factory polling rate limited; stopping this pass");
+          break;
+        }
       }
     }
   }
 
-  async refreshLaunches() {
+  async refreshLaunches(options: { maxLaunches?: number; includeHolders?: boolean } = {}) {
+    const staleBefore = new Date(Date.now() - REFRESH_STALE_MS);
     const launches = await prisma.launch.findMany({
-      where: currentFactoryLaunchWhere(),
-      orderBy: { createdAt: "asc" },
+      where: {
+        ...currentFactoryLaunchWhere(),
+        tokenMasterAddress: { not: null },
+        presalePoolAddress: { not: null },
+        OR: [{ pendingIndexing: true }, { lastIndexedAt: null }, { lastIndexedAt: { lt: staleBefore } }],
+      },
+      orderBy: [{ pendingIndexing: "desc" }, { lastIndexedAt: "asc" }, { createdAt: "desc" }],
+      take: options.maxLaunches ?? REFRESH_LIMIT,
     });
 
-    for (const launch of launches) {
+    for (const [index, launch] of launches.entries()) {
       try {
-        if (!launch.presalePoolAddress || !launch.tokenMasterAddress) continue;
-        const snapshot = await this.loadLaunchSnapshot(launch);
-        const updated = await prisma.launch.update({
-          where: { id: launch.id },
-          data: {
-            tokenName: snapshot.tokenName,
-            symbol: snapshot.symbol,
-            description: snapshot.description,
-            logoUrl: snapshot.logoUrl,
-            metadataUrl: snapshot.metadataUrl,
-            creatorWallet: snapshot.creatorWallet,
-            tokenMasterAddress: snapshot.tokenMasterAddress,
-            presalePoolAddress: snapshot.presalePoolAddress,
-            softCap: snapshot.softCap,
-            hardCap: snapshot.hardCap,
-            raisedTon: snapshot.raisedTon,
-            liquidityPercent: snapshot.liquidityPercent,
-            status: snapshot.status,
-            startTime: snapshot.startTime,
-            endTime: snapshot.endTime,
-            totalSupply: snapshot.totalSupply,
-            decimals: snapshot.decimals,
-            presaleRate: snapshot.presaleRate,
-            minContribution: snapshot.minContribution,
-            maxContribution: snapshot.maxContribution,
-            presaleAllocation: snapshot.presaleAllocation,
-            liquidityAllocation: snapshot.liquidityAllocation,
-            creatorAllocation: snapshot.creatorAllocation,
-            platformTonTreasury: snapshot.platformTonTreasury,
-            platformTokenTreasury: snapshot.platformTokenTreasury,
-            liquidityTreasury: snapshot.liquidityTreasury,
-            platformTonFeeBps: snapshot.platformTonFeeBps,
-            platformTokenFeeBps: snapshot.platformTokenFeeBps,
-            platformTokenFeeAmount: snapshot.platformTokenFeeAmount,
-            platformTokenFeeTonTreasuryShare: snapshot.platformTokenFeeTonTreasuryShare,
-            platformTokenFeeTokenTreasuryShare: snapshot.platformTokenFeeTokenTreasuryShare,
-            liquidityTonAmount: snapshot.liquidityTonAmount,
-            creatorTreasuryAmount: snapshot.creatorTreasuryAmount,
-            pendingIndexing: false,
-            lastIndexedAt: new Date(),
-          },
+        await this.hydrateLaunch(launch, {
+          includeHolders: !!options.includeHolders && index === 0,
         });
-        await this.refreshHolders(updated);
-        console.log("[indexer] launch updated", {
-          id: updated.id,
-          raisedTon: updated.raisedTon,
-          presalePoolAddress: updated.presalePoolAddress,
-          tokenMasterAddress: updated.tokenMasterAddress,
-          status: updated.status,
-        });
+        await pause(METHOD_DELAY_MS);
       } catch (err) {
         console.warn("[indexer] failed to refresh launch", {
           launchId: launch.id,
           presalePoolAddress: launch.presalePoolAddress,
           err,
         });
+        if (isRateLimitError(err)) {
+          console.warn("[indexer] launch refresh rate limited; stopping this pass");
+          break;
+        }
       }
     }
+  }
+
+  private async createPlaceholderLaunch(args: {
+    index: number;
+    discoveredAt: Date;
+    tokenMasterAddress: string;
+    presalePoolAddress: string;
+    creatorWallet: string;
+  }) {
+    return prisma.launch.create({
+      data: {
+        tokenName: `TONPad Launch ${args.index + 1}`,
+        symbol: `TON${args.index + 1}`,
+        description: "",
+        logoUrl: "https://tonpad.org/icon.png",
+        metadataUrl: null,
+        creatorWallet: args.creatorWallet,
+        factoryAddress: config.factoryAddress,
+        tokenMasterAddress: args.tokenMasterAddress,
+        presalePoolAddress: args.presalePoolAddress,
+        softCap: 0,
+        hardCap: 0,
+        raisedTon: 0,
+        liquidityPercent: 0,
+        status: "upcoming",
+        startTime: args.discoveredAt,
+        endTime: new Date(args.discoveredAt.getTime() + 60 * 60 * 1000),
+        totalSupply: 0,
+        decimals: 9,
+        presaleRate: 0,
+        minContribution: null,
+        maxContribution: null,
+        presaleAllocation: 0,
+        liquidityAllocation: 0,
+        creatorAllocation: 0,
+        platformTonTreasury: null,
+        platformTokenTreasury: null,
+        liquidityTreasury: null,
+        platformTonFeeBps: 500,
+        platformTokenFeeBps: 100,
+        pendingIndexing: true,
+      },
+    });
+  }
+
+  private async createHydratedLaunch(args: {
+    index: number;
+    discoveredAt: Date;
+    tokenMasterAddress: string;
+    presalePoolAddress: string;
+    creatorWallet: string;
+  }) {
+    const snapshot = await this.loadLaunchSnapshot({
+      id: `factory-${args.index}`,
+      factoryAddress: config.factoryAddress,
+      tokenMasterAddress: args.tokenMasterAddress,
+      presalePoolAddress: args.presalePoolAddress,
+      creatorWallet: args.creatorWallet,
+      tokenName: `TONPad Launch ${args.index + 1}`,
+      symbol: `TON${args.index + 1}`,
+      description: "",
+      logoUrl: "https://tonpad.org/icon.png",
+      metadataUrl: null,
+      softCap: 0,
+      hardCap: 0,
+      raisedTon: 0,
+      liquidityPercent: 0,
+      startTime: args.discoveredAt,
+      endTime: new Date(args.discoveredAt.getTime() + 60 * 60 * 1000),
+      totalSupply: 0,
+      decimals: 9,
+      presaleRate: 0,
+      minContribution: null,
+      maxContribution: null,
+      presaleAllocation: 0,
+      liquidityAllocation: 0,
+      creatorAllocation: 0,
+      platformTonTreasury: null,
+      platformTokenTreasury: null,
+      liquidityTreasury: null,
+      platformTonFeeBps: 500,
+      platformTokenFeeBps: 100,
+    });
+
+    return prisma.launch.create({
+      data: {
+        tokenName: snapshot.tokenName,
+        symbol: snapshot.symbol,
+        description: snapshot.description,
+        logoUrl: snapshot.logoUrl,
+        metadataUrl: snapshot.metadataUrl,
+        creatorWallet: args.creatorWallet,
+        factoryAddress: config.factoryAddress,
+        tokenMasterAddress: args.tokenMasterAddress,
+        presalePoolAddress: args.presalePoolAddress,
+        softCap: snapshot.softCap,
+        hardCap: snapshot.hardCap,
+        raisedTon: snapshot.raisedTon,
+        liquidityPercent: snapshot.liquidityPercent,
+        status: snapshot.status,
+        startTime: snapshot.startTime,
+        endTime: snapshot.endTime,
+        totalSupply: snapshot.totalSupply,
+        decimals: snapshot.decimals,
+        presaleRate: snapshot.presaleRate,
+        minContribution: snapshot.minContribution,
+        maxContribution: snapshot.maxContribution,
+        presaleAllocation: snapshot.presaleAllocation,
+        liquidityAllocation: snapshot.liquidityAllocation,
+        creatorAllocation: snapshot.creatorAllocation,
+        platformTonTreasury: snapshot.platformTonTreasury,
+        platformTokenTreasury: snapshot.platformTokenTreasury,
+        liquidityTreasury: snapshot.liquidityTreasury,
+        platformTonFeeBps: snapshot.platformTonFeeBps,
+        platformTokenFeeBps: snapshot.platformTokenFeeBps,
+        platformTokenFeeAmount: snapshot.platformTokenFeeAmount,
+        platformTokenFeeTonTreasuryShare: snapshot.platformTokenFeeTonTreasuryShare,
+        platformTokenFeeTokenTreasuryShare: snapshot.platformTokenFeeTokenTreasuryShare,
+        liquidityTonAmount: snapshot.liquidityTonAmount,
+        creatorTreasuryAmount: snapshot.creatorTreasuryAmount,
+        pendingIndexing: false,
+        lastIndexedAt: args.discoveredAt,
+      },
+    });
+  }
+
+  private async hydrateLaunch(
+    launch: Parameters<TonpadIndexer["loadLaunchSnapshot"]>[0] & { id: string },
+    options: { includeHolders: boolean },
+  ) {
+    const snapshot = await this.loadLaunchSnapshot(launch);
+    const updated = await prisma.launch.update({
+      where: { id: launch.id },
+      data: {
+        tokenName: snapshot.tokenName,
+        symbol: snapshot.symbol,
+        description: snapshot.description,
+        logoUrl: snapshot.logoUrl,
+        metadataUrl: snapshot.metadataUrl,
+        creatorWallet: snapshot.creatorWallet,
+        tokenMasterAddress: snapshot.tokenMasterAddress,
+        presalePoolAddress: snapshot.presalePoolAddress,
+        softCap: snapshot.softCap,
+        hardCap: snapshot.hardCap,
+        raisedTon: snapshot.raisedTon,
+        liquidityPercent: snapshot.liquidityPercent,
+        status: snapshot.status,
+        startTime: snapshot.startTime,
+        endTime: snapshot.endTime,
+        totalSupply: snapshot.totalSupply,
+        decimals: snapshot.decimals,
+        presaleRate: snapshot.presaleRate,
+        minContribution: snapshot.minContribution,
+        maxContribution: snapshot.maxContribution,
+        presaleAllocation: snapshot.presaleAllocation,
+        liquidityAllocation: snapshot.liquidityAllocation,
+        creatorAllocation: snapshot.creatorAllocation,
+        platformTonTreasury: snapshot.platformTonTreasury,
+        platformTokenTreasury: snapshot.platformTokenTreasury,
+        liquidityTreasury: snapshot.liquidityTreasury,
+        platformTonFeeBps: snapshot.platformTonFeeBps,
+        platformTokenFeeBps: snapshot.platformTokenFeeBps,
+        platformTokenFeeAmount: snapshot.platformTokenFeeAmount,
+        platformTokenFeeTonTreasuryShare: snapshot.platformTokenFeeTonTreasuryShare,
+        platformTokenFeeTokenTreasuryShare: snapshot.platformTokenFeeTokenTreasuryShare,
+        liquidityTonAmount: snapshot.liquidityTonAmount,
+        creatorTreasuryAmount: snapshot.creatorTreasuryAmount,
+        pendingIndexing: false,
+        lastIndexedAt: new Date(),
+      },
+    });
+    if (options.includeHolders) {
+      await this.refreshHolders(updated);
+    }
+    console.log("[indexer] launch updated", {
+      id: updated.id,
+      raisedTon: updated.raisedTon,
+      presalePoolAddress: updated.presalePoolAddress,
+      tokenMasterAddress: updated.tokenMasterAddress,
+      status: updated.status,
+    });
+    return updated;
   }
 
   private async loadLaunchSnapshot(launch: {
@@ -296,13 +410,14 @@ class TonpadIndexer {
     const pool = Address.parse(launch.presalePoolAddress);
     const token = Address.parse(launch.tokenMasterAddress);
 
-    const [poolConfig, poolState, tokenMeta, effectiveTreasuries] = await Promise.all([
-      this.client.runMethod(pool, "getConfig"),
-      this.client.runMethod(pool, "getState"),
-      this.client.runMethod(token, "getTokenMetadata"),
-      this.client.runMethod(factory, "getEffectiveTreasuries", [
-        { type: "slice", cell: beginCell().storeAddress(pool).endCell() },
-      ]),
+    const poolConfig = await this.client.runMethod(pool, "getConfig");
+    await pause(METHOD_DELAY_MS);
+    const poolState = await this.client.runMethod(pool, "getState");
+    await pause(METHOD_DELAY_MS);
+    const tokenMeta = await this.client.runMethod(token, "getTokenMetadata");
+    await pause(METHOD_DELAY_MS);
+    const effectiveTreasuries = await this.client.runMethod(factory, "getEffectiveTreasuries", [
+      { type: "slice", cell: beginCell().storeAddress(pool).endCell() },
     ]);
 
     const configStack = poolConfig.stack;
@@ -479,6 +594,29 @@ class TonpadIndexer {
     const result = await this.client.runMethod(walletAddress, "get_wallet_data");
     return result.stack.readBigNumber();
   }
+}
+
+function buildLaunchIndexes(launchCount: number, maxLaunches: number) {
+  const indexes: number[] = [];
+  for (let i = launchCount - 1; i >= 0 && indexes.length < maxLaunches; i -= 1) {
+    indexes.push(i);
+  }
+  return indexes;
+}
+
+function shouldRefreshLaunch(launch: { pendingIndexing: boolean; lastIndexedAt: Date | null }) {
+  if (launch.pendingIndexing) return true;
+  if (!launch.lastIndexedAt) return true;
+  return Date.now() - launch.lastIndexedAt.getTime() >= REFRESH_STALE_MS;
+}
+
+function isRateLimitError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes("429") || message.toLowerCase().includes("ratelimit");
+}
+
+function pause(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function currentFactoryLaunchWhere(): Prisma.LaunchWhereInput {

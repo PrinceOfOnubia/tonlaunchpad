@@ -1,3 +1,4 @@
+import { Address } from "@ton/core";
 import type { Paginated, Token, TokenListParams, Transaction, UserPortfolio } from "./types";
 import { DEFAULT_TOKEN_IMAGE_URL } from "./tonLaunchpad";
 import { derivePresaleStatus } from "./presaleStatus";
@@ -32,7 +33,10 @@ export function getRecentLaunches(): RecentLaunch[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizeRecentLaunch).filter(Boolean) as RecentLaunch[];
+    const launches = parsed.map(normalizeRecentLaunch).filter(Boolean) as RecentLaunch[];
+    const currentFactory = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
+    if (!currentFactory) return launches;
+    return launches.filter((launch) => !launch.factoryAddress || sameAddress(launch.factoryAddress, currentFactory));
   } catch {
     return [];
   }
@@ -272,7 +276,12 @@ function tokenStatus(value: unknown): Token["presale"]["status"] {
 }
 
 function sameAddress(left: string | undefined, right: string): boolean {
-  return !!left && left.toLowerCase() === right.toLowerCase();
+  if (!left) return false;
+  try {
+    return Address.parse(left).equals(Address.parse(right));
+  } catch {
+    return left.toLowerCase() === right.toLowerCase();
+  }
 }
 
 function withDerivedStatus(token: Token): Token {

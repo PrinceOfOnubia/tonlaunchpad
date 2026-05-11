@@ -22,5 +22,5 @@ export const config = {
   ).replace(/\/$/, ""),
   uploadDir: process.env.UPLOAD_DIR ?? "backend/uploads",
   indexerEnabled: process.env.INDEXER_ENABLED !== "false",
-  indexerIntervalMs: Number(process.env.INDEXER_INTERVAL_MS ?? 5_000),
+  indexerIntervalMs: Number(process.env.INDEXER_INTERVAL_MS ?? 30_000),
 };
