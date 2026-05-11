@@ -81,6 +81,8 @@ message Refund {}
 message CreatorClaimTreasury {}
 message WithdrawTreasury {}
 message RecoverFailedTokens {}
+message EndPresaleEarly {}
+message CancelPresaleEarly {}
 message Pause {}
 message Unpause {}
 message CancelSale {}
@@ -335,6 +337,7 @@ contract JettonWallet with Deployable {
 
 contract PresalePool with Deployable {
     factory: Address;
+    factoryOwner: Address;
     creator: Address;
     token: Address;
     treasuryAddress: Address;
@@ -370,6 +373,7 @@ contract PresalePool with Deployable {
 
     init(
         factory: Address,
+        factoryOwner: Address,
         creator: Address,
         token: Address,
         treasuryAddress: Address,
@@ -399,6 +403,7 @@ contract PresalePool with Deployable {
         throwUnless(ERR_BAD_ALLOCATION, buyerTokenAllocation + platformTokenFee == presaleTokenAllocation);
 
         self.factory = factory;
+        self.factoryOwner = factoryOwner;
         self.creator = creator;
         self.token = token;
         self.treasuryAddress = treasuryAddress;
@@ -451,6 +456,9 @@ contract PresalePool with Deployable {
         self.userContribution.set(ctx.sender, nextContribution);
         self.totalRaised += accepted;
         self.totalSold += tokenAmount;
+        if (self.totalRaised >= self.hardCap) {
+            self.markSuccessfulEnd();
+        }
 
         let excess: Int = ctx.value - accepted;
         if (excess > 0) {
@@ -492,7 +500,7 @@ contract PresalePool with Deployable {
 
     receive(_: Refund) {
         let ctx: Context = context();
-        throwUnless(ERR_SOFT_CAP_MET, self.cancelled || (now() > self.endTime && self.totalRaised < self.softCap));
+        throwUnless(ERR_SOFT_CAP_MET, self.isRefundable());
         let contribution: Int = self.storedContribution(ctx.sender);
         throwUnless(ERR_NO_CONTRIBUTION, contribution > 0);
         throwUnless(ERR_ALREADY_DONE, !self.storedRefunded(ctx.sender));
@@ -509,8 +517,8 @@ contract PresalePool with Deployable {
     }
 
     receive(_: RecoverFailedTokens) {
-        throwUnless(ERR_NOT_OWNER, context().sender == self.creator);
-        throwUnless(ERR_SOFT_CAP_MET, self.cancelled || (now() > self.endTime && self.totalRaised < self.softCap));
+        throwUnless(ERR_NOT_OWNER, self.canManagePresale(context().sender));
+        throwUnless(ERR_SOFT_CAP_MET, self.isRefundable());
         throwUnless(ERR_ALREADY_DONE, !self.failedTokensRecovered);
         self.failed = true;
         self.failedTokensRecovered = true;
@@ -575,13 +583,26 @@ contract PresalePool with Deployable {
     }
 
     receive(_: CancelSale) {
-        throwUnless(ERR_NOT_OWNER, context().sender == self.creator);
-        throwUnless(ERR_ALREADY_DONE, !self.finalized);
-        self.cancelled = true;
+        self.cancelPresaleEarly();
+    }
+
+    receive(_: EndPresaleEarly) {
+        throwUnless(ERR_NOT_OWNER, self.canManagePresale(context().sender));
+        throwUnless(ERR_ALREADY_DONE, !self.finalized && !self.cancelled);
+        throwUnless(ERR_SOFT_CAP_NOT_MET, self.totalRaised >= self.softCap);
+        self.markSuccessfulEnd();
+    }
+
+    receive(_: CancelPresaleEarly) {
+        self.cancelPresaleEarly();
     }
 
     fun isSuccessful(): Bool {
-        return !self.cancelled && (now() > self.endTime || self.totalRaised >= self.hardCap) && self.totalRaised >= self.softCap;
+        return !self.cancelled && !self.failed && self.totalRaised >= self.softCap && (self.finalized || now() > self.endTime || self.totalRaised >= self.hardCap);
+    }
+
+    fun isRefundable(): Bool {
+        return self.cancelled || self.failed || (now() > self.endTime && self.totalRaised < self.softCap);
     }
 
     fun platformTonFee(): Int {
@@ -645,6 +666,26 @@ contract PresalePool with Deployable {
         if (!self.tokenFeesRouted) {
             self.tokenFeesRouted = true;
         }
+    }
+
+    fun canManagePresale(sender: Address): Bool {
+        return sender == self.creator || sender == self.factoryOwner;
+    }
+
+    fun markSuccessfulEnd() {
+        self.finalized = true;
+        self.failed = false;
+        self.cancelled = false;
+        self.endTime = now();
+    }
+
+    fun cancelPresaleEarly() {
+        throwUnless(ERR_NOT_OWNER, self.canManagePresale(context().sender));
+        throwUnless(ERR_ALREADY_DONE, !self.finalized && !self.cancelled);
+        throwUnless(ERR_SOFT_CAP_MET, self.totalRaised < self.softCap);
+        self.failed = true;
+        self.cancelled = true;
+        self.endTime = now();
     }
 
     fun tokensForTon(amount: Int): Int {
@@ -839,6 +880,7 @@ contract LaunchpadFactory with Deployable {
 
         let poolInit: StateInit = initOf PresalePool(
             myAddress(),
+            self.owner,
             creator,
             tokenAddress,
             msg.treasuryAddress,

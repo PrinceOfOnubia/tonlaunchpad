@@ -373,6 +373,58 @@ describe('TONPad public fee architecture', () => {
     expect(await pool.getGetContribution(f.user2.address)).toEqual(toNano('1'));
   });
 
+  it('ends automatically when a contribution fills the hard cap', async () => {
+    const f = await fixture();
+    const { token, pool } = await launch(f);
+
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('20'));
+
+    const state = await pool.getGetState();
+    const claim = await pool.send(f.user.getSender(), { value: toNano('0.2') }, { $$type: 'ClaimTokens' });
+
+    expect(state.totalRaised).toEqual(toNano('20'));
+    expect(state.finalized).toBe(true);
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, success: true });
+    expect(await jettonBalance(f, token, pool.address)).toEqual(BUYER_ALLOCATION - 20_000_000_000_000_000n);
+  });
+
+  it('lets the creator or factory owner end a soft-cap sale early as successful', async () => {
+    const f = await fixture();
+    const { token, pool } = await launch(f);
+
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('10'));
+
+    const end = await pool.send(f.owner.getSender(), { value: toNano('0.05') }, { $$type: 'EndPresaleEarly' });
+    const state = await pool.getGetState();
+    const claim = await pool.send(f.user.getSender(), { value: toNano('0.2') }, { $$type: 'ClaimTokens' });
+
+    expect(end.transactions).toHaveTransaction({ from: f.owner.address, to: pool.address, success: true });
+    expect(state.finalized).toBe(true);
+    expect(claim.transactions).toHaveTransaction({ from: pool.address, success: true });
+    expect(await jettonBalance(f, token, f.user.address)).toEqual(10_000_000_000_000_000n);
+  });
+
+  it('lets the creator cancel a pre-soft-cap sale early and unlock refunds', async () => {
+    const f = await fixture();
+    const { pool } = await launch(f);
+
+    f.blockchain.now = f.startTime + 1;
+    await contribute(f, pool, f.user, toNano('2'));
+
+    const cancel = await pool.send(f.creator.getSender(), { value: toNano('0.05') }, { $$type: 'CancelPresaleEarly' });
+    const refund = await pool.send(f.user.getSender(), { value: toNano('0.05') }, { $$type: 'Refund' });
+    const creatorClaim = await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
+    const state = await pool.getGetState();
+
+    expect(cancel.transactions).toHaveTransaction({ from: f.creator.address, to: pool.address, success: true });
+    expect(state.failed).toBe(true);
+    expect(state.cancelled).toBe(true);
+    expect(refund.transactions).toHaveTransaction({ from: pool.address, to: f.user.address, success: true });
+    expect(creatorClaim.transactions).toHaveTransaction({ from: f.creator.address, to: pool.address, success: false });
+  });
+
   it('claim and refund flows still work normally', async () => {
     const successFixture = await fixture();
     const { token, pool } = await launch(successFixture);
