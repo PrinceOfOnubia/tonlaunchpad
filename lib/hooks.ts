@@ -116,7 +116,19 @@ export function useTokenTransactions(
 }
 
 export function usePlatformStats(config: SWRConfiguration = {}) {
-  return useSWR(["stats"] as const, () => api.stats.platform(), {
+  return useSWR(["stats"] as const, async () => {
+    try {
+      return await api.stats.platform();
+    } catch (err) {
+      console.warn("Platform stats unavailable; showing zeroed fallback.", err);
+      return {
+        totalTokens: 0,
+        totalUsers: 0,
+        totalVolumeTon: 0,
+        totalRaisedTon: 0,
+      };
+    }
+  }, {
     ...defaultConfig,
     refreshInterval: 30_000,
     ...config,

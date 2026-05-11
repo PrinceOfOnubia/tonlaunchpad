@@ -13,6 +13,10 @@ export function startIndexer() {
     console.log("[indexer] disabled");
     return;
   }
+  if (!config.factoryAddress) {
+    console.log("[indexer] disabled: FACTORY_ADDRESS is missing");
+    return;
+  }
 
   const indexer = new TonpadIndexer();
   void indexer.tick();
@@ -70,7 +74,7 @@ class TonpadIndexer {
 
         const existing = await prisma.launch.findFirst({
           where: {
-            factoryAddress: config.factoryAddress,
+            factoryAddress: { in: addressVariants(config.factoryAddress) },
             OR: [
               { presalePoolAddress: { in: addressVariants(presalePoolAddress) } },
               { tokenMasterAddress: { in: addressVariants(tokenMasterAddress) } },
@@ -478,7 +482,8 @@ class TonpadIndexer {
 }
 
 function currentFactoryLaunchWhere(): Prisma.LaunchWhereInput {
-  return { factoryAddress: config.factoryAddress };
+  if (!config.factoryAddress) return {};
+  return { factoryAddress: { in: addressVariants(config.factoryAddress) } };
 }
 
 function fromNano(value: bigint) {

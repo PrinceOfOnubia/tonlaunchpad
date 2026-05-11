@@ -19,6 +19,8 @@ import type {
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
 const API_URL = RAW_API_URL && !RAW_API_URL.endsWith("/api") ? `${RAW_API_URL}/api` : RAW_API_URL;
+const TONCENTER_ENDPOINT =
+  process.env.NEXT_PUBLIC_TONCENTER_ENDPOINT ?? "https://testnet.toncenter.com/api/v2/jsonRPC";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) {
@@ -228,11 +230,17 @@ export const api = {
   },
 
   wallet: {
-    balance: (wallet: string, signal?: AbortSignal) =>
-      request<{ wallet: string; balanceTon: number; balanceNano: string }>(
-        `/wallet/${encodeURIComponent(wallet)}/balance`,
-        { signal },
-      ),
+    balance: async (wallet: string, signal?: AbortSignal) => {
+      try {
+        return await request<{ wallet: string; balanceTon: number; balanceNano: string }>(
+          `/wallet/${encodeURIComponent(wallet)}/balance`,
+          { signal },
+        );
+      } catch (err) {
+        console.warn("Backend wallet balance unavailable; falling back to Toncenter.", err);
+        return fetchToncenterWalletBalance(wallet, signal);
+      }
+    },
   },
 
   upload: {
@@ -259,3 +267,45 @@ export const api = {
 };
 
 export type Api = typeof api;
+
+async function fetchToncenterWalletBalance(wallet: string, signal?: AbortSignal) {
+  const response = await fetch(TONCENTER_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      id: "tonpad-wallet-balance",
+      jsonrpc: "2.0",
+      method: "getAddressBalance",
+      params: { address: wallet },
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Toncenter balance request failed: ${response.statusText}`);
+  }
+
+  const body = (await response.json()) as {
+    ok?: boolean;
+    result?: string;
+    error?: { message?: string } | string;
+  };
+  const balanceNano = typeof body.result === "string" ? body.result : null;
+  if (body.ok === false || !balanceNano) {
+    const message =
+      typeof body.error === "string"
+        ? body.error
+        : typeof body.error?.message === "string"
+          ? body.error.message
+          : "Toncenter balance response was invalid.";
+    throw new ApiError(502, message, body);
+  }
+
+  return {
+    wallet,
+    balanceNano,
+    balanceTon: Number(balanceNano) / 1_000_000_000,
+  };
+}

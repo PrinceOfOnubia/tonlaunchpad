@@ -12,6 +12,7 @@ import { createLaunchSchema, listQuerySchema, tonAddressSchema } from "./validat
 import { addressVariants, canonicalAddress } from "./address";
 
 export const router = Router();
+const CONTRIBUTE_OPCODE = 443500403;
 const CLAIM_TOKENS_OPCODE = 1528841928;
 const REFUND_OPCODE = 2910599901;
 const CREATOR_CLAIM_TREASURY_OPCODE = 1459145241;
@@ -33,7 +34,12 @@ const reroute = (req: Request, res: Response, next: NextFunction, url: string) =
 };
 
 router.get("/health", (_req, res) => {
-  res.json({ ok: true, network: config.network, indexedFactory: config.factoryAddress });
+  res.json({
+    ok: true,
+    network: config.network,
+    indexedFactory: config.factoryAddress,
+    apiConfigured: !!config.factoryAddress && !!config.toncenterEndpoint,
+  });
 });
 
 router.get("/api/wallet/:wallet/balance", async (req, res, next) => {
@@ -213,7 +219,7 @@ router.post("/api/launches", async (req, res, next) => {
       hasBoc: !!body.transactionBoc,
     });
 
-    const factoryAddress = body.factoryAddress ?? config.factoryAddress;
+    const factoryAddress = canonicalAddress(body.factoryAddress ?? config.factoryAddress);
     const platformTonTreasury = (body.platformTonTreasury ?? config.platformTonTreasury) || null;
     const platformTokenTreasury = (body.platformTokenTreasury ?? config.platformTokenTreasury) || null;
     const liquidityTreasury = body.liquidityTreasury ?? config.liquidityTreasury ?? null;
@@ -306,13 +312,19 @@ router.post("/api/launches", async (req, res, next) => {
         .catch((err) => console.warn("[api] async launch reconciliation failed", err));
     }
 
-    if (body.txHash) {
+    const launchTxHash =
+      body.txHash ??
+      body.transactionBoc ??
+      launch.txHash ??
+      `launch-${launch.id}-${creatorWallet}`;
+
+    if (launchTxHash) {
       await prisma.transaction.upsert({
-        where: { txHash: body.txHash },
+        where: { txHash: launchTxHash },
         create: {
           launchId: launch.id,
           walletAddress: creatorWallet,
-          txHash: body.txHash,
+          txHash: launchTxHash,
           type: "launch",
           timestamp: launch.createdAt,
         },
@@ -369,7 +381,14 @@ router.get("/api/profile/:wallet", async (req, res, next) => {
             where: { ...currentFactoryLaunchWhere(), creatorWallet: { in: walletVariants } },
             orderBy: { createdAt: "desc" },
           }),
-          prisma.holder.findMany({ where: { walletAddress: { in: walletVariants }, tokenBalance: { gt: 0 } }, include: { launch: true } }),
+          prisma.holder.findMany({
+            where: {
+              walletAddress: { in: walletVariants },
+              tokenBalance: { gt: 0 },
+              launch: { is: currentFactoryLaunchWhere() },
+            },
+            include: { launch: true },
+          }),
           prisma.transaction.findMany({
             where: { walletAddress: { in: walletVariants }, launch: { is: currentFactoryLaunchWhere() } },
             include: { launch: true },
@@ -548,6 +567,23 @@ router.get("/api/tokens/:id/presale/contribution", async (req, res, next) => {
       tokensOwed: contribution._sum.tokenAmount ?? amountTon * launch.presaleRate,
       claimed: !!claimed,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+router.post("/api/tokens/:id/presale/contribute", async (req, res, next) => {
+  try {
+    const wallet = tonAddressSchema.parse(String(req.body?.wallet ?? ""));
+    const amountTon = Number(req.body?.amountTon ?? 0);
+    if (!Number.isFinite(amountTon) || amountTon <= 0) {
+      return res.status(400).json({ message: "amountTon must be greater than 0" });
+    }
+    const launch = await findLaunchByIdOrAddress(req.params.id);
+    if (!launch || !launch.presalePoolAddress) {
+      return res.status(404).json({ message: "Launch not found" });
+    }
+    void wallet;
+    res.json(buildPresaleTx(launch.presalePoolAddress, CONTRIBUTE_OPCODE, amountTon.toString()));
   } catch (err) {
     next(err);
   }
@@ -757,7 +793,10 @@ router.get("/api/users/:wallet/created", async (req, res, next) => {
     const wallet = tonAddressSchema.parse(req.params.wallet);
     const walletVariants = addressVariants(wallet);
     const created = await safeDb(
-      () => prisma.launch.findMany({ where: { creatorWallet: { in: walletVariants } } }),
+      () =>
+        prisma.launch.findMany({
+          where: { ...currentFactoryLaunchWhere(), creatorWallet: { in: walletVariants } },
+        }),
       [],
     );
     res.json(created.map(launchToToken));
@@ -835,7 +874,7 @@ async function updateStatsCache() {
     prisma.launch.aggregate({ where: currentFactoryLaunchWhere(), _sum: { raisedTon: true } }),
     prisma.holder.groupBy({ by: ["walletAddress"], where: { tokenBalance: { gt: 0 }, launch: { is: currentFactoryLaunchWhere() } } }),
     prisma.transaction.aggregate({
-      where: { timestamp: { gte: dayAgo }, type: { in: ["contribute", "treasury"] }, launch: { is: currentFactoryLaunchWhere() } },
+      where: { timestamp: { gte: dayAgo }, type: "contribute", launch: { is: currentFactoryLaunchWhere() } },
       _sum: { amountTon: true },
     }),
   ]);
@@ -898,7 +937,12 @@ function emptyStats(_note: string) {
 function emptyProfile(wallet: string, note: string) {
   return {
     wallet,
+    createdLaunches: [],
     createdTokens: [],
+    contributedLaunches: [],
+    claimedTokens: [],
+    claimableTokens: [],
+    creatorAllocations: [],
     contributions: [],
     transactions: [],
     claimable: [],
@@ -919,7 +963,8 @@ function publicUrl(req: Request, path: string) {
 }
 
 function currentFactoryLaunchWhere(): Prisma.LaunchWhereInput {
-  return { factoryAddress: config.factoryAddress };
+  if (!config.factoryAddress) return {};
+  return { factoryAddress: { in: addressVariants(config.factoryAddress) } };
 }
 
 function buildPresaleTx(poolAddress: string, opcode: number, amountTon: string) {
