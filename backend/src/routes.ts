@@ -33,12 +33,35 @@ const reroute = (req: Request, res: Response, next: NextFunction, url: string) =
   );
 };
 
-router.get("/health", (_req, res) => {
+router.get("/health", async (_req, res) => {
+  const [launchCount, unresolvedLaunches] = await Promise.all([
+    safeDb(() => prisma.launch.count({ where: currentFactoryLaunchWhere() }), 0),
+    safeDb(
+      () =>
+        prisma.launch.count({
+          where: {
+            ...currentFactoryLaunchWhere(),
+            OR: [
+              { pendingIndexing: true },
+              { tokenMasterAddress: null },
+              { presalePoolAddress: null },
+            ],
+          },
+        }),
+      0,
+    ),
+  ]);
   res.json({
     ok: true,
     network: config.network,
     indexedFactory: config.factoryAddress,
     apiConfigured: !!config.factoryAddress && !!config.toncenterEndpoint,
+    indexerIntervalMs: config.indexerIntervalMs,
+    indexerFastPollLimit: config.indexerFastPollLimit,
+    indexerFullPollLimit: config.indexerFullPollLimit,
+    indexerRefreshLimit: config.indexerRefreshLimit,
+    currentFactoryLaunchCount: launchCount,
+    unresolvedCurrentFactoryLaunches: unresolvedLaunches,
   });
 });
 
@@ -168,7 +191,7 @@ router.get("/api/launches/:id", async (req, res, next) => {
     if (!launch) return res.status(404).json({ message: "Launch not found" });
     if (launch.pendingIndexing || !launch.presalePoolAddress) {
       try {
-        await reconcileFactoryLaunches({ mode: "fast" });
+        await reconcileFactoryLaunches({ mode: "full" });
         launch =
           (await prisma.launch.findUnique({ where: { id: launch.id } })) ?? launch;
         console.log("[api] launch reconciliation check", {
@@ -354,10 +377,11 @@ router.post("/api/launches", async (req, res, next) => {
 
 router.get("/api/stats", async (_req, res, next) => {
   try {
+    await ensureFactoryLaunchBootstrap("[api] stats bootstrap");
     let stats = await safeDb(() => updateStatsCache(), null);
     if (stats && stats.tokensLaunched === 0) {
       try {
-        await reconcileFactoryLaunches({ mode: "fast" });
+        await reconcileFactoryLaunches({ mode: "full" });
         stats = await safeDb(() => updateStatsCache(), stats);
       } catch (err) {
         console.warn("[api] stats reconciliation bootstrap skipped", err);
@@ -858,10 +882,28 @@ function findLaunchByIdOrAddress(id: string) {
 }
 
 async function ensureFactoryLaunchBootstrap(reason: string) {
-  const launchCount = await safeDb(() => prisma.launch.count({ where: currentFactoryLaunchWhere() }), 0);
-  if (launchCount > 0) return;
+  const [launchCount, unresolvedLaunchCount] = await Promise.all([
+    safeDb(() => prisma.launch.count({ where: currentFactoryLaunchWhere() }), 0),
+    safeDb(
+      () =>
+        prisma.launch.count({
+          where: {
+            ...currentFactoryLaunchWhere(),
+            OR: [
+              { pendingIndexing: true },
+              { tokenMasterAddress: null },
+              { presalePoolAddress: null },
+            ],
+          },
+        }),
+      0,
+    ),
+  ]);
+  if (launchCount > 0 && unresolvedLaunchCount === 0) return;
   try {
-    await reconcileFactoryLaunches({ mode: "fast" });
+    await reconcileFactoryLaunches({
+      mode: launchCount === 0 || unresolvedLaunchCount > 0 ? "full" : "fast",
+    });
   } catch (err) {
     console.warn(reason, err);
   }

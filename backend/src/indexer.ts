@@ -7,9 +7,6 @@ import { computeStatus } from "./mappers";
 import { addressVariants } from "./address";
 
 const NANO = 1_000_000_000;
-const FAST_POLL_LIMIT = 6;
-const FULL_POLL_LIMIT = 24;
-const REFRESH_LIMIT = 3;
 const REFRESH_STALE_MS = 20_000;
 const METHOD_DELAY_MS = 120;
 
@@ -34,9 +31,10 @@ export async function reconcileFactoryLaunches(options: { mode?: ReconcileMode }
   const indexer = new TonpadIndexer();
   const mode = options.mode ?? "full";
   await indexer.pollFactory({ mode });
-  if (mode === "full") {
-    await indexer.refreshLaunches({ maxLaunches: REFRESH_LIMIT, includeHolders: true });
-  }
+  await indexer.refreshLaunches({
+    maxLaunches: config.indexerRefreshLimit,
+    includeHolders: mode === "full",
+  });
 }
 
 class TonpadIndexer {
@@ -53,9 +51,14 @@ class TonpadIndexer {
       console.log("[indexer] tick start", {
         network: config.network,
         factoryAddress: config.factoryAddress,
+        intervalMs: config.indexerIntervalMs,
+        refreshLimit: config.indexerRefreshLimit,
       });
       await this.pollFactory({ mode: "full" });
-      await this.refreshLaunches({ maxLaunches: REFRESH_LIMIT, includeHolders: true });
+      await this.refreshLaunches({
+        maxLaunches: config.indexerRefreshLimit,
+        includeHolders: true,
+      });
       console.log("[indexer] tick complete");
     } catch (err) {
       console.warn("[indexer] tick failed", err);
@@ -77,7 +80,8 @@ class TonpadIndexer {
 
     const launchIndexes = buildLaunchIndexes(
       launchCount,
-      options.maxLaunches ?? (mode === "fast" ? FAST_POLL_LIMIT : FULL_POLL_LIMIT),
+      options.maxLaunches ??
+        (mode === "fast" ? config.indexerFastPollLimit : config.indexerFullPollLimit),
     );
 
     for (const i of launchIndexes) {
@@ -118,7 +122,7 @@ class TonpadIndexer {
             presalePoolAddress,
             tokenMasterAddress,
           });
-          if (mode === "full" && shouldRefreshLaunch(updated)) {
+          if ((mode === "full" || shouldRefreshLaunch(updated)) && updated.tokenMasterAddress && updated.presalePoolAddress) {
             await this.hydrateLaunch(updated, { includeHolders: false });
           }
           await pause(METHOD_DELAY_MS);
@@ -167,7 +171,7 @@ class TonpadIndexer {
         OR: [{ pendingIndexing: true }, { lastIndexedAt: null }, { lastIndexedAt: { lt: staleBefore } }],
       },
       orderBy: [{ pendingIndexing: "desc" }, { lastIndexedAt: "asc" }, { createdAt: "desc" }],
-      take: options.maxLaunches ?? REFRESH_LIMIT,
+      take: options.maxLaunches ?? config.indexerRefreshLimit,
     });
 
     for (const [index, launch] of launches.entries()) {
