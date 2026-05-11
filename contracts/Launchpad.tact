@@ -521,7 +521,7 @@ contract PresalePool with Deployable {
             bounce: true,
             body: JettonTransfer{
                 queryId: 0,
-                amount: self.buyerTokenAllocation - self.totalSold + self.platformTokenFee + self.liquidityTokenAllocation,
+                amount: self.buyerTokenAllocation - self.totalSold,
                 destination: self.creator,
                 responseDestination: null,
                 customPayload: null,
@@ -641,62 +641,9 @@ contract PresalePool with Deployable {
         }
     }
 
-    fun routeTokenFees(msg: CurrentTreasuries) {
+    fun routeTokenFees(_: CurrentTreasuries) {
         if (!self.tokenFeesRouted) {
             self.tokenFeesRouted = true;
-            let tonTreasuryShare: Int = self.platformTokenFeeTonTreasuryShare();
-            let tokenTreasuryShare: Int = self.platformTokenFeeTokenTreasuryShare();
-            if (tonTreasuryShare > 0) {
-                send(SendParameters{
-                    to: self.poolWallet(),
-                    value: TOKEN_TRANSFER_GAS,
-                    mode: SendPayGasSeparately + SendIgnoreErrors,
-                    bounce: true,
-                    body: JettonTransfer{
-                        queryId: 0,
-                        amount: tonTreasuryShare,
-                        destination: msg.platformTonTreasury,
-                        responseDestination: null,
-                        customPayload: null,
-                        forwardTonAmount: JETTON_FORWARD_TON,
-                        forwardPayload: emptyCell()
-                    }.toCell()
-                });
-            }
-            if (tokenTreasuryShare > 0) {
-                send(SendParameters{
-                    to: self.poolWallet(),
-                    value: TOKEN_TRANSFER_GAS,
-                    mode: SendPayGasSeparately + SendIgnoreErrors,
-                    bounce: true,
-                    body: JettonTransfer{
-                        queryId: 0,
-                        amount: tokenTreasuryShare,
-                        destination: msg.platformTokenTreasury,
-                        responseDestination: null,
-                        customPayload: null,
-                        forwardTonAmount: JETTON_FORWARD_TON,
-                        forwardPayload: emptyCell()
-                    }.toCell()
-                });
-            }
-            if (self.liquidityTokenAllocation > 0) {
-                send(SendParameters{
-                    to: self.poolWallet(),
-                    value: TOKEN_TRANSFER_GAS,
-                    mode: SendPayGasSeparately + SendIgnoreErrors,
-                    bounce: true,
-                    body: JettonTransfer{
-                        queryId: 0,
-                        amount: self.liquidityTokenAllocation,
-                        destination: self.liquidityReceiver(msg),
-                        responseDestination: null,
-                        customPayload: null,
-                        forwardTonAmount: JETTON_FORWARD_TON,
-                        forwardPayload: emptyCell()
-                    }.toCell()
-                });
-            }
         }
     }
 
@@ -922,7 +869,7 @@ contract LaunchpadFactory with Deployable {
             value: TOKEN_DEPLOY_VALUE,
             mode: SendIgnoreErrors,
             bounce: false,
-            body: MintToken{to: poolAddress, amount: buyerTokenAllocation + platformTokenFee + liquidityAllocation}.toCell()
+            body: MintToken{to: poolAddress, amount: buyerTokenAllocation}.toCell()
         });
         deploy(DeployParameters{
             init: poolInit,
@@ -938,6 +885,39 @@ contract LaunchpadFactory with Deployable {
             bounce: true,
             body: MintToken{to: creator, amount: creatorAllocation}.toCell()
         });
+        let tonTreasuryShare: Int = platformTokenFee / 2;
+        let tokenTreasuryShare: Int = platformTokenFee - tonTreasuryShare;
+        if (tonTreasuryShare > 0) {
+            send(SendParameters{
+                to: tokenAddress,
+                value: TOKEN_TRANSFER_GAS,
+                mode: SendIgnoreErrors,
+                bounce: true,
+                body: MintToken{to: self.platformTonTreasury, amount: tonTreasuryShare}.toCell()
+            });
+        }
+        if (tokenTreasuryShare > 0) {
+            send(SendParameters{
+                to: tokenAddress,
+                value: TOKEN_TRANSFER_GAS,
+                mode: SendIgnoreErrors,
+                bounce: true,
+                body: MintToken{to: self.platformTokenTreasury, amount: tokenTreasuryShare}.toCell()
+            });
+        }
+        if (liquidityAllocation > 0) {
+            let liquidityReceiver: Address = creator;
+            if (self.liquidityTreasurySet) {
+                liquidityReceiver = self.liquidityTreasury;
+            }
+            send(SendParameters{
+                to: tokenAddress,
+                value: TOKEN_TRANSFER_GAS,
+                mode: SendIgnoreErrors,
+                bounce: true,
+                body: MintToken{to: liquidityReceiver, amount: liquidityAllocation}.toCell()
+            });
+        }
     }
 
     get fun getLaunchCount(): Int {
