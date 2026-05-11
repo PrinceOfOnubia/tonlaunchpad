@@ -370,12 +370,20 @@ export function CreateTokenForm() {
           decimals: data.decimals,
           imageUrl,
         });
-        metadataUrl = metadata.url;
+        metadataUrl = metadata.metadataUrl ?? metadata.url ?? metadata.uri ?? null;
+        console.debug("[launch] metadata publish result", metadata);
+        if (!metadataUrl) {
+          throw new Error("Metadata endpoint did not return a metadata URL.");
+        }
       } catch (err) {
         console.error("Token metadata publishing failed", err);
-        throw new Error(
-          "Token metadata could not be published. Please try again before launching.",
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Token metadata could not be published. Please try again before launching.",
         );
+        setDeployStatus(null);
+        return;
       }
       const payload: CreateTokenPayload = {
         ...data,
@@ -393,18 +401,63 @@ export function CreateTokenForm() {
         return;
       }
 
-      setDeployStatus("Waiting for wallet approval...");
-      const transaction = buildLaunchTokenTransaction(payload, wallet);
-      const result = await tonConnectUI.sendTransaction({
+      let transaction;
+      try {
+        transaction = buildLaunchTokenTransaction(payload, wallet);
+      } catch (err) {
+        console.error("Launch payload build failed", {
+          error: err,
+          metadataUrl,
+          factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
+          wallet,
+          payload,
+        });
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Launch payload could not be prepared. Please check your launch settings.",
+        );
+        setDeployStatus(null);
+        return;
+      }
+
+      console.debug("[launch] sendTransaction payload", {
+        metadataUrl,
+        factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
+        to: transaction.to,
+        amountNano: transaction.amountNano,
+        payloadPresent: !!transaction.payload,
+        payloadLength: transaction.payload.length,
         validUntil: transaction.validUntil,
-        messages: [
-          {
-            address: transaction.to,
-            amount: transaction.amountNano,
-            payload: transaction.payload,
-          },
-        ],
       });
+
+      setDeployStatus("Waiting for wallet approval...");
+      let result;
+      try {
+        result = await tonConnectUI.sendTransaction({
+          validUntil: transaction.validUntil,
+          messages: [
+            {
+              address: transaction.to,
+              amount: transaction.amountNano,
+              payload: transaction.payload,
+            },
+          ],
+        });
+      } catch (err) {
+        console.error("Launch sendTransaction failed", {
+          error: err,
+          metadataUrl,
+          factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
+          to: transaction.to,
+          amountNano: transaction.amountNano,
+          validUntil: transaction.validUntil,
+          payloadLength: transaction.payload.length,
+        });
+        setError(normalizeTonConnectError(err));
+        setDeployStatus(null);
+        return;
+      }
 
       console.debug("Launch transaction result BOC", result.boc);
       let launchId = `recent-${Date.now().toString(36)}`;
@@ -461,7 +514,11 @@ export function CreateTokenForm() {
       setDeployStatus("Launch transaction submitted.");
     } catch (err) {
       console.error("Launch deployment failed", err);
-      setError(normalizeTonConnectError(err));
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Launch deployment failed before the wallet transaction could start.",
+      );
       setDeployStatus(null);
     } finally {
       setSubmitting(false);

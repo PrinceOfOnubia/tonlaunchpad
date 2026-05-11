@@ -74,7 +74,8 @@ router.post("/api/metadata", (req, res) => {
   };
   const fileName = `${Date.now()}-${metadata.symbol.toLowerCase().replace(/[^a-z0-9]/g, "") || "token"}.json`;
   writeFileSync(join(config.uploadDir, fileName), JSON.stringify(metadata, null, 2));
-  res.status(201).json({ url: publicUrl(req, `/uploads/${fileName}`) });
+  const metadataUrl = publicUrl(req, `/uploads/${fileName}`);
+  res.status(201).json({ url: metadataUrl, metadataUrl, uri: metadataUrl });
 });
 
 router.get("/api/launches", async (req, res, next) => {

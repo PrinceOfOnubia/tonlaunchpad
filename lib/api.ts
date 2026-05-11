@@ -262,7 +262,11 @@ export const api = {
       description: string;
       decimals: number;
       imageUrl: string;
-    }) => request<{ url: string }>("/metadata", { method: "POST", body: payload }),
+    }) =>
+      request<{ url?: string; metadataUrl?: string; uri?: string }>("/metadata", {
+        method: "POST",
+        body: payload,
+      }),
   },
 };
 
