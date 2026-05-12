@@ -884,6 +884,7 @@ contract PresalePool with Deployable {
 
 contract LaunchpadFactory with Deployable {
     owner: Address;
+    deploymentNonce: Int;
     platformTonTreasury: Address;
     platformTokenTreasury: Address;
     liquidityTreasury: Address;
@@ -895,8 +896,9 @@ contract LaunchpadFactory with Deployable {
     records: map<Int, LaunchRecord>;
     launchedPools: map<Address, Bool>;
 
-    init(owner: Address) {
+    init(owner: Address, deploymentNonce: Int) {
         self.owner = owner;
+        self.deploymentNonce = deploymentNonce;
         self.platformTonTreasury = owner;
         self.platformTokenTreasury = owner;
         self.liquidityTreasury = owner;

@@ -46,7 +46,7 @@ async function fixture(): Promise<Fixture> {
   const user = await blockchain.treasury('user');
   const user2 = await blockchain.treasury('user2');
 
-  const factory = blockchain.openContract(await LaunchpadFactory.fromInit(owner.address));
+  const factory = blockchain.openContract(await LaunchpadFactory.fromInit(owner.address, 1n));
   await factory.send(owner.getSender(), { value: toNano('0.2') }, { $$type: 'Deploy', queryId: 0n });
   await factory.send(owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTonTreasury', newAddress: platformTonTreasury.address });
   await factory.send(owner.getSender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTokenTreasury', newAddress: platformTokenTreasury.address });
