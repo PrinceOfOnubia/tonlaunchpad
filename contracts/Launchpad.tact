@@ -29,7 +29,6 @@ const TOKEN_TRANSFER_GAS: Int = 100000000;
 const DEPLOY_VALUE: Int = 50000000;
 const TOKEN_DEPLOY_VALUE: Int = 250000000;
 const JETTON_FORWARD_TON: Int = 1;
-const TON_PAYOUT_GAS_RESERVE: Int = 10000000;
 
 message LaunchToken {
     name: String;
@@ -82,18 +81,8 @@ message Refund {}
 message CreatorClaimTreasury {}
 message WithdrawTreasury {}
 message RecoverFailedTokens {}
-message(0x595f07bc) JettonBurn {
-    queryId: Int as uint64;
-    amount: Int;
-}
-message(0x7bdd97de) JettonBurnNotification {
-    queryId: Int as uint64;
-    amount: Int;
-    owner: Address;
-}
 message EndPresaleEarly {}
 message CancelPresaleEarly {}
-message BurnUnsoldTokens {}
 message Pause {}
 message Unpause {}
 message CancelSale {}
@@ -125,12 +114,6 @@ message TransferOwnership {
 message PauseNewLaunches {}
 message UnpauseNewLaunches {}
 message RequestTreasuries {}
-message FinalizeCreatorPayout {}
-message FinalizeTonPayout {
-    platformTonTreasury: Address;
-    liquidityTreasury: Address;
-    liquidityTreasurySet: Bool;
-}
 
 message CurrentTreasuries {
     platformTonTreasury: Address;
@@ -183,7 +166,6 @@ struct PresaleState {
     liquidityTon: Int;
     creatorClaimable: Int;
     tokenFeesRouted: Bool;
-    burnedTokens: Int;
 }
 
 struct PresaleConfig {
@@ -264,13 +246,6 @@ contract LaunchpadJettonMaster with Deployable {
         });
     }
 
-    receive(msg: JettonBurnNotification) {
-        let expectedWallet: Address = contractAddress(initOf JettonWallet(myAddress(), msg.owner));
-        throwUnless(ERR_NOT_FACTORY, context().sender == expectedWallet);
-        throwUnless(ERR_BAD_ALLOCATION, self.mintedSupply >= msg.amount);
-        self.mintedSupply -= msg.amount;
-    }
-
     get fun getWalletAddress(owner: Address): Address {
         return contractAddress(initOf JettonWallet(myAddress(), owner));
     }
@@ -346,24 +321,6 @@ contract JettonWallet with Deployable {
         });
     }
 
-    receive(msg: JettonBurn) {
-        throwUnless(ERR_NOT_TOKEN_OWNER, context().sender == self.owner);
-        throwUnless(ERR_INSUFFICIENT_BALANCE, self.balance >= msg.amount);
-
-        self.balance -= msg.amount;
-        send(SendParameters{
-            to: self.master,
-            value: 0,
-            mode: SendRemainingValue + SendIgnoreErrors,
-            bounce: true,
-            body: JettonBurnNotification{
-                queryId: msg.queryId,
-                amount: msg.amount,
-                owner: self.owner
-            }.toCell()
-        });
-    }
-
     get fun getWalletData(): JettonWalletData {
         return JettonWalletData{
             balance: self.balance,
@@ -410,7 +367,6 @@ contract PresalePool with Deployable {
     platformTonFeePaid: Bool;
     tokenFeesRouted: Bool;
     failedTokensRecovered: Bool;
-    burnedTokens: Int;
     userContribution: map<Address, Int>;
     userClaimed: map<Address, Bool>;
     userRefunded: map<Address, Bool>;
@@ -477,7 +433,6 @@ contract PresalePool with Deployable {
         self.platformTonFeePaid = false;
         self.tokenFeesRouted = false;
         self.failedTokensRecovered = false;
-        self.burnedTokens = 0;
     }
 
     receive(_: Contribute) {
@@ -574,7 +529,7 @@ contract PresalePool with Deployable {
             bounce: true,
             body: JettonTransfer{
                 queryId: 0,
-                amount: self.unsoldBuyerTokens(),
+                amount: self.buyerTokenAllocation - self.totalSold,
                 destination: self.creator,
                 responseDestination: null,
                 customPayload: null,
@@ -595,8 +550,19 @@ contract PresalePool with Deployable {
     fun claimTreasury() {
         throwUnless(ERR_NOT_TREASURY, context().sender == self.treasuryAddress || context().sender == self.creator);
         throwUnless(ERR_SOFT_CAP_NOT_MET, self.isSuccessful());
-        throwUnless(ERR_ALREADY_DONE, !self.successfulPayoutsCompleted());
-        self.markSuccessfulEnd();
+        throwUnless(ERR_ALREADY_DONE, !self.treasuryClaimed);
+
+        self.finalized = true;
+        self.treasuryClaimed = true;
+        let creatorAmount: Int = self.totalRaised - self.platformTonFee() - self.liquidityTon();
+
+        send(SendParameters{
+            to: self.treasuryAddress,
+            value: creatorAmount,
+            mode: SendPayGasSeparately + SendIgnoreErrors,
+            bounce: false
+        });
+        self.requestTreasuryRouting();
     }
 
     receive(msg: CurrentTreasuries) {
@@ -604,52 +570,6 @@ contract PresalePool with Deployable {
         throwUnless(ERR_SOFT_CAP_NOT_MET, self.isSuccessful());
         self.routeTokenFees(msg);
         self.routeTonFees(msg);
-    }
-
-    receive(_: FinalizeCreatorPayout) {
-        throwUnless(ERR_NOT_FACTORY, context().sender == myAddress());
-        send(SendParameters{
-            to: self.treasuryAddress,
-            value: 0,
-            mode: SendRemainingValue + SendIgnoreErrors,
-            bounce: false
-        });
-    }
-
-    receive(msg: FinalizeTonPayout) {
-        throwUnless(ERR_NOT_FACTORY, context().sender == myAddress());
-        let platformFee: Int = self.platformTonFee();
-        let liquidityAmount: Int = 0;
-        let creatorAmount: Int = self.totalRaised - platformFee;
-        if (msg.liquidityTreasurySet) {
-            liquidityAmount = self.liquidityTon();
-            creatorAmount = creatorAmount - liquidityAmount;
-        }
-        creatorAmount = creatorAmount - TON_PAYOUT_GAS_RESERVE;
-        if (platformFee > 0) {
-            send(SendParameters{
-                to: msg.platformTonTreasury,
-                value: platformFee,
-                mode: SendPayGasSeparately + SendIgnoreErrors,
-                bounce: false
-            });
-        }
-        if (liquidityAmount > 0) {
-            send(SendParameters{
-                to: msg.liquidityTreasury,
-                value: liquidityAmount,
-                mode: SendPayGasSeparately + SendIgnoreErrors,
-                bounce: false
-            });
-        }
-        if (creatorAmount > 0) {
-            send(SendParameters{
-                to: self.treasuryAddress,
-                value: creatorAmount,
-                mode: SendPayGasSeparately + SendIgnoreErrors,
-                bounce: false
-            });
-        }
     }
 
     receive(_: Pause) {
@@ -677,36 +597,12 @@ contract PresalePool with Deployable {
         self.cancelPresaleEarly();
     }
 
-    receive(_: BurnUnsoldTokens) {
-        throwUnless(ERR_NOT_OWNER, self.canManagePresale(context().sender));
-        throwUnless(ERR_SOFT_CAP_NOT_MET, self.isSuccessful());
-        throwUnless(ERR_ALREADY_DONE, self.burnedTokens == 0);
-        let unsold: Int = self.unsoldBuyerTokens();
-        throwUnless(ERR_BAD_ALLOCATION, unsold > 0);
-        self.markSuccessfulEnd();
-        self.burnedTokens = unsold;
-        send(SendParameters{
-            to: self.poolWallet(),
-            value: TOKEN_TRANSFER_GAS,
-            mode: SendPayGasSeparately + SendIgnoreErrors,
-            bounce: true,
-            body: JettonBurn{
-                queryId: 0,
-                amount: unsold
-            }.toCell()
-        });
-    }
-
     fun isSuccessful(): Bool {
         return !self.cancelled && !self.failed && self.totalRaised >= self.softCap && (self.finalized || now() > self.endTime || self.totalRaised >= self.hardCap);
     }
 
     fun isRefundable(): Bool {
         return self.cancelled || self.failed || (now() > self.endTime && self.totalRaised < self.softCap);
-    }
-
-    fun successfulPayoutsCompleted(): Bool {
-        return self.treasuryClaimed && self.platformTonFeePaid;
     }
 
     fun platformTonFee(): Int {
@@ -743,20 +639,26 @@ contract PresalePool with Deployable {
     }
 
     fun routeTonFees(msg: CurrentTreasuries) {
-        if (!self.platformTonFeePaid || !self.treasuryClaimed) {
+        if (self.treasuryClaimed && !self.platformTonFeePaid) {
             self.platformTonFeePaid = true;
-            self.treasuryClaimed = true;
-            send(SendParameters{
-                to: myAddress(),
-                value: 0,
-                mode: SendRemainingBalance + SendIgnoreErrors,
-                bounce: false,
-                body: FinalizeTonPayout{
-                    platformTonTreasury: msg.platformTonTreasury,
-                    liquidityTreasury: msg.liquidityTreasury,
-                    liquidityTreasurySet: msg.liquidityTreasurySet
-                }.toCell()
-            });
+            let platformFee: Int = self.platformTonFee();
+            let liquidityAmount: Int = self.liquidityTon();
+            if (platformFee > 0) {
+                send(SendParameters{
+                    to: msg.platformTonTreasury,
+                    value: platformFee,
+                    mode: SendPayGasSeparately + SendIgnoreErrors,
+                    bounce: false
+                });
+            }
+            if (liquidityAmount > 0) {
+                send(SendParameters{
+                    to: self.liquidityReceiver(msg),
+                    value: liquidityAmount,
+                    mode: SendPayGasSeparately + SendIgnoreErrors,
+                    bounce: false
+                });
+            }
         }
     }
 
@@ -775,7 +677,6 @@ contract PresalePool with Deployable {
         self.failed = false;
         self.cancelled = false;
         self.endTime = now();
-        self.requestTreasuryRouting();
     }
 
     fun cancelPresaleEarly() {
@@ -789,10 +690,6 @@ contract PresalePool with Deployable {
 
     fun tokensForTon(amount: Int): Int {
         return (amount * self.presaleRate) / 1000000000;
-    }
-
-    fun unsoldBuyerTokens(): Int {
-        return self.buyerTokenAllocation - self.totalSold - self.burnedTokens;
     }
 
     fun poolWallet(): Address {
@@ -838,8 +735,7 @@ contract PresalePool with Deployable {
             platformTonFee: fee,
             liquidityTon: liquidity,
             creatorClaimable: self.totalRaised - fee - liquidity,
-            tokenFeesRouted: self.tokenFeesRouted,
-            burnedTokens: self.burnedTokens
+            tokenFeesRouted: self.tokenFeesRouted
         };
     }
 
@@ -884,7 +780,6 @@ contract PresalePool with Deployable {
 
 contract LaunchpadFactory with Deployable {
     owner: Address;
-    deploymentNonce: Int;
     platformTonTreasury: Address;
     platformTokenTreasury: Address;
     liquidityTreasury: Address;
@@ -896,9 +791,8 @@ contract LaunchpadFactory with Deployable {
     records: map<Int, LaunchRecord>;
     launchedPools: map<Address, Bool>;
 
-    init(owner: Address, deploymentNonce: Int) {
+    init(owner: Address) {
         self.owner = owner;
-        self.deploymentNonce = deploymentNonce;
         self.platformTonTreasury = owner;
         self.platformTokenTreasury = owner;
         self.liquidityTreasury = owner;

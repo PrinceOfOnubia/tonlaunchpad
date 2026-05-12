@@ -2,8 +2,6 @@ import { Address } from "@ton/core";
 import type { Paginated, Token, TokenListParams, Transaction, UserPortfolio } from "./types";
 import { DEFAULT_TOKEN_IMAGE_URL } from "./tonLaunchpad";
 import { derivePresaleStatus } from "./presaleStatus";
-import { computeAllocationBreakdown } from "./allocationMath";
-import { getCachedFactoryAddress } from "./runtimeConfig";
 
 export const RECENT_LAUNCHES_KEY = "tonpad_recent_launches";
 
@@ -36,7 +34,7 @@ export function getRecentLaunches(): RecentLaunch[] {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     const launches = parsed.map(normalizeRecentLaunch).filter(Boolean) as RecentLaunch[];
-    const currentFactory = getCachedFactoryAddress();
+    const currentFactory = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
     if (!currentFactory) return launches;
     return launches.filter((launch) => !launch.factoryAddress || sameAddress(launch.factoryAddress, currentFactory));
   } catch {
@@ -46,53 +44,6 @@ export function getRecentLaunches(): RecentLaunch[] {
 
 export function getRecentLaunchToken(id: string): Token | null {
   return getRecentLaunches().find((launch) => launch.id === id)?.token ?? null;
-}
-
-export function mergePendingTokenWithRecent(id: string, token: Token): Token {
-  const recent = getRecentLaunchToken(id);
-  if (!recent) return token;
-  const unresolved =
-    !token.address &&
-    !token.tokenMasterAddress &&
-    !token.presalePoolAddress &&
-    (token.name === "Pending Launch" || token.totalSupply === 0);
-
-  if (!unresolved) return token;
-
-  return normalizeToken({
-    ...recent,
-    ...token,
-    id,
-    name: recent.name,
-    symbol: recent.symbol,
-    description: recent.description,
-    imageUrl: recent.imageUrl,
-    bannerUrl: recent.bannerUrl,
-    metadataUrl: recent.metadataUrl,
-    totalSupply: recent.totalSupply,
-    decimals: recent.decimals,
-    allocations: recent.allocations,
-    liquidityPercent: recent.liquidityPercent,
-    social: recent.social,
-    creator: recent.creator,
-    createdAt: recent.createdAt,
-    allocationBreakdown:
-      token.allocationBreakdown && token.allocationBreakdown.presaleTokens > 0
-        ? token.allocationBreakdown
-        : recent.allocationBreakdown,
-    presale: {
-      ...recent.presale,
-      ...token.presale,
-      raised: token.presale?.raised ?? recent.presale.raised,
-      contributors: token.presale?.contributors ?? recent.presale.contributors,
-      status: token.presale?.status ?? recent.presale.status,
-    },
-    address: token.address ?? recent.address,
-    tokenMasterAddress: token.tokenMasterAddress ?? recent.tokenMasterAddress,
-    presalePoolAddress: token.presalePoolAddress ?? recent.presalePoolAddress,
-    txHash: token.txHash ?? recent.txHash,
-    setupState: token.setupState ?? recent.setupState,
-  });
 }
 
 export function recentLaunchesPage(params: TokenListParams = {}): Paginated<Token> {
@@ -176,19 +127,6 @@ export function tokenFromLaunchInput(args: {
   factoryAddress?: string;
   createdAt: string;
 }): Token {
-  const allocationBreakdown = computeAllocationBreakdown({
-    totalSupply: args.form.totalSupply,
-    presalePercent: args.form.allocations.presale,
-    liquidityPercentTokens: args.form.allocations.liquidity,
-    creatorPercent: args.form.allocations.creator,
-    totalRaisedTon: 0,
-    liquidityPercentOfRaised: args.form.liquidityPercent,
-    platformTonFeeBps: 500,
-    platformTokenFeeBps: 100,
-    liquidityTreasurySet: false,
-    burnedTokens: 0,
-  });
-
   return normalizeToken({
     id: args.id,
     address: null,
@@ -220,8 +158,6 @@ export function tokenFromLaunchInput(args: {
     marketCap: 0,
     volume24h: 0,
     holders: 0,
-    allocationBreakdown,
-    setupState: "preparing",
   });
 }
 
@@ -230,8 +166,6 @@ export function normalizeToken(input: unknown): Token {
   const presale = isRecord(source.presale) ? source.presale : {};
   const allocations = isRecord(source.allocations) ? source.allocations : {};
   const social = isRecord(source.social) ? source.social : {};
-  const allocationBreakdown = isRecord(source.allocationBreakdown) ? source.allocationBreakdown : {};
-  const platformFees = isRecord(source.platformFees) ? source.platformFees : {};
   const now = new Date().toISOString();
 
   return {
@@ -283,26 +217,6 @@ export function normalizeToken(input: unknown): Token {
     volume24h: numberValue(source.volume24h, 0),
     holders: numberValue(source.holders, 0),
     setupState: source.setupState === "ready" ? "ready" : source.setupState === "preparing" ? "preparing" : undefined,
-    allocationBreakdown: {
-      presaleTON: numberValue(allocationBreakdown.presaleTON, 0),
-      liquidityTON: numberValue(allocationBreakdown.liquidityTON, 0),
-      platformFeeTON: numberValue(allocationBreakdown.platformFeeTON, 0),
-      creatorTON: numberValue(allocationBreakdown.creatorTON, 0),
-      presaleTokens: numberValue(allocationBreakdown.presaleTokens, 0),
-      liquidityTokens: numberValue(allocationBreakdown.liquidityTokens, 0),
-      creatorTokens: numberValue(allocationBreakdown.creatorTokens, 0),
-      presaleTokenFee: numberValue(allocationBreakdown.presaleTokenFee, 0),
-      burnedTokens: numberValue(allocationBreakdown.burnedTokens, 0),
-      liquidityReceiver:
-        allocationBreakdown.liquidityReceiver === "liquidity" ? "liquidity" : "creator",
-    },
-    platformFees: {
-      tonTreasury: nullableString(platformFees.tonTreasury),
-      tokenTreasury: nullableString(platformFees.tokenTreasury),
-      liquidityTreasury: nullableString(platformFees.liquidityTreasury),
-      tonFeeBps: numberValue(platformFees.tonFeeBps, 500),
-      tokenFeeBps: numberValue(platformFees.tokenFeeBps, 100),
-    },
   };
 }
 

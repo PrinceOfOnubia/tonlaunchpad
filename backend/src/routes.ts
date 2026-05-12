@@ -6,11 +6,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { config } from "./config";
 import { prisma } from "./db";
-import { readOnChainLaunchCount, reconcileFactoryLaunches } from "./indexer";
+import { reconcileFactoryLaunches } from "./indexer";
 import { computeStatus, launchToToken, txToApi } from "./mappers";
 import { createLaunchSchema, listQuerySchema, tonAddressSchema } from "./validation";
 import { addressVariants, canonicalAddress } from "./address";
-import { buildPersistedAllocationFields } from "./allocation";
 
 export const router = Router();
 const CONTRIBUTE_OPCODE = 443500403;
@@ -34,37 +33,12 @@ const reroute = (req: Request, res: Response, next: NextFunction, url: string) =
   );
 };
 
-router.get("/health", async (_req, res) => {
-  const [launchCount, unresolvedLaunches, onChainLaunchCount] = await Promise.all([
-    safeDb(() => prisma.launch.count({ where: currentFactoryLaunchWhere() }), 0),
-    safeDb(
-      () =>
-        prisma.launch.count({
-          where: {
-            ...currentFactoryLaunchWhere(),
-            OR: [
-              { pendingIndexing: true },
-              { tokenMasterAddress: null },
-              { presalePoolAddress: null },
-            ],
-          },
-        }),
-      0,
-    ),
-    safeAsync(() => readOnChainLaunchCount(), null),
-  ]);
+router.get("/health", (_req, res) => {
   res.json({
     ok: true,
     network: config.network,
     indexedFactory: config.factoryAddress,
     apiConfigured: !!config.factoryAddress && !!config.toncenterEndpoint,
-    indexerIntervalMs: config.indexerIntervalMs,
-    indexerFastPollLimit: config.indexerFastPollLimit,
-    indexerFullPollLimit: config.indexerFullPollLimit,
-    indexerRefreshLimit: config.indexerRefreshLimit,
-    onChainLaunchCount,
-    currentFactoryLaunchCount: launchCount,
-    unresolvedCurrentFactoryLaunches: unresolvedLaunches,
   });
 });
 
@@ -177,11 +151,6 @@ router.get("/api/launches", async (req, res, next) => {
 
 router.get("/api/launches/:id", async (req, res, next) => {
   try {
-    const requestedId = req.params.id;
-    console.log("[api] GET /api/launches/:id requested", {
-      requestedId,
-      factoryAddress: config.factoryAddress,
-    });
     const idAddressVariants = addressVariants(req.params.id);
     let launch = await prisma.launch.findFirst({
       where: {
@@ -196,37 +165,10 @@ router.get("/api/launches/:id", async (req, res, next) => {
         ],
       },
     });
-    if (!launch) {
-      if (isOptimisticRecentLaunchId(requestedId)) {
-        try {
-          await reconcileFactoryLaunches({ mode: "full" });
-          launch = await prisma.launch.findFirst({
-            where: {
-              ...currentFactoryLaunchWhere(),
-              OR: [
-                { id: requestedId },
-                { txHash: requestedId },
-              ],
-            },
-          });
-        } catch (err) {
-          console.warn("[api] optimistic launch reconciliation failed", {
-            requestedId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-      if (!launch) {
-        console.warn("[api] launch unresolved; returning pending placeholder", {
-          requestedId,
-          factoryAddress: config.factoryAddress,
-        });
-        return res.json(buildPendingLaunchResponse(requestedId));
-      }
-    }
+    if (!launch) return res.status(404).json({ message: "Launch not found" });
     if (launch.pendingIndexing || !launch.presalePoolAddress) {
       try {
-        await reconcileFactoryLaunches({ mode: "full" });
+        await reconcileFactoryLaunches({ mode: "fast" });
         launch =
           (await prisma.launch.findUnique({ where: { id: launch.id } })) ?? launch;
         console.log("[api] launch reconciliation check", {
@@ -236,31 +178,8 @@ router.get("/api/launches/:id", async (req, res, next) => {
           tokenMasterAddress: launch.tokenMasterAddress,
         });
       } catch (err) {
-        console.warn("[api] launch reconciliation skipped", {
-          requestedId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        console.warn("[api] launch reconciliation skipped", err);
       }
-    }
-
-    if (launch.pendingIndexing || !launch.tokenMasterAddress || !launch.presalePoolAddress) {
-      console.log("[api] launch still pending after reconciliation", {
-        requestedId,
-        resolvedLaunchId: launch.id,
-        tokenMasterAddress: launch.tokenMasterAddress,
-        presalePoolAddress: launch.presalePoolAddress,
-      });
-      return res.json({
-        ...launchToToken(launch),
-        status: "pending",
-        tokenMasterAddress: launch.tokenMasterAddress ?? null,
-        presalePoolAddress: launch.presalePoolAddress ?? null,
-        setupState: "preparing",
-        presale: {
-          ...launchToToken(launch).presale,
-          contributors: 0,
-        },
-      });
     }
 
     const contributors = await prisma.transaction.groupBy({
@@ -313,34 +232,16 @@ router.post("/api/launches", async (req, res, next) => {
     const platformTokenFeeTonTreasuryShare = platformTokenFeeAmount / 2;
     const platformTokenFeeTokenTreasuryShare =
       platformTokenFeeAmount - platformTokenFeeTonTreasuryShare;
-    const allocationFields = buildPersistedAllocationFields({
-      totalSupply: body.totalSupply,
-      presalePercent: body.allocations.presale,
-      liquidityPercentTokens: body.allocations.liquidity,
-      creatorPercent: body.allocations.creator,
-      totalRaisedTon: 0,
-      liquidityPercentOfRaised: body.liquidityPercent,
-      platformTonFeeBps,
-      platformTokenFeeBps,
-      liquidityTreasurySet: !!liquidityTreasury,
-      burnedTokens: 0,
-    });
     const status = computeStatus({
       startTime: body.presale.startTime,
       endTime: body.presale.endTime,
       raisedTon: 0,
       softCap: body.presale.softCap,
-      hardCap: body.presale.hardCap,
       status: "upcoming",
     });
 
-    const launchTxRef =
-      body.txHash ??
-      body.transactionBoc ??
-      `frontend-${factoryAddress}-${creatorWallet}-${body.symbol}-${body.presale.startTime.toISOString()}`;
-
     const launch = await prisma.launch.upsert({
-      where: { txHash: launchTxRef },
+      where: { txHash: body.txHash ?? `frontend-${Date.now()}-${body.symbol}` },
       create: {
         tokenName: body.name,
         symbol: body.symbol.toUpperCase(),
@@ -351,7 +252,7 @@ router.post("/api/launches", async (req, res, next) => {
         factoryAddress,
         tokenMasterAddress,
         presalePoolAddress,
-        txHash: launchTxRef,
+        txHash: body.txHash,
         softCap: body.presale.softCap,
         hardCap: body.presale.hardCap,
         liquidityPercent: body.liquidityPercent,
@@ -366,13 +267,6 @@ router.post("/api/launches", async (req, res, next) => {
         presaleAllocation: body.allocations.presale,
         liquidityAllocation: body.allocations.liquidity,
         creatorAllocation: body.allocations.creator,
-        presaleTokens: allocationFields.presaleTokens,
-        liquidityTokens: allocationFields.liquidityTokens,
-        creatorTokens: allocationFields.creatorTokens,
-        presaleTON: allocationFields.presaleTON,
-        liquidityTON: allocationFields.liquidityTON,
-        platformFeeTON: allocationFields.platformFeeTON,
-        creatorTON: allocationFields.creatorTON,
         platformTonTreasury,
         platformTokenTreasury,
         liquidityTreasury,
@@ -385,7 +279,6 @@ router.post("/api/launches", async (req, res, next) => {
         pendingIndexing: !(tokenMasterAddress && presalePoolAddress),
       },
       update: {
-        txHash: launchTxRef,
         logoUrl: body.logoUrl ?? body.imageUrl ?? undefined,
         metadataUrl: body.metadataUrl ?? undefined,
         creatorWallet,
@@ -395,24 +288,6 @@ router.post("/api/launches", async (req, res, next) => {
           tokenMasterAddress && presalePoolAddress ? false : undefined,
         status,
         factoryAddress,
-        totalSupply: body.totalSupply,
-        decimals: body.decimals,
-        presaleRate: body.presale.rate,
-        softCap: body.presale.softCap,
-        hardCap: body.presale.hardCap,
-        liquidityPercent: body.liquidityPercent,
-        startTime: body.presale.startTime,
-        endTime: body.presale.endTime,
-        presaleAllocation: body.allocations.presale,
-        liquidityAllocation: body.allocations.liquidity,
-        creatorAllocation: body.allocations.creator,
-        presaleTokens: allocationFields.presaleTokens,
-        liquidityTokens: allocationFields.liquidityTokens,
-        creatorTokens: allocationFields.creatorTokens,
-        presaleTON: allocationFields.presaleTON,
-        liquidityTON: allocationFields.liquidityTON,
-        platformFeeTON: allocationFields.platformFeeTON,
-        creatorTON: allocationFields.creatorTON,
         platformTonTreasury: platformTonTreasury ?? undefined,
         platformTokenTreasury: platformTokenTreasury ?? undefined,
         liquidityTreasury: liquidityTreasury ?? undefined,
@@ -440,7 +315,11 @@ router.post("/api/launches", async (req, res, next) => {
         .catch((err) => console.warn("[api] async launch reconciliation failed", err));
     }
 
-    const launchTxHash = launch.txHash ?? `launch-${launch.id}-${creatorWallet}`;
+    const launchTxHash =
+      body.txHash ??
+      body.transactionBoc ??
+      launch.txHash ??
+      `launch-${launch.id}-${creatorWallet}`;
 
     if (launchTxHash) {
       await prisma.transaction.upsert({
@@ -474,11 +353,10 @@ router.post("/api/launches", async (req, res, next) => {
 
 router.get("/api/stats", async (_req, res, next) => {
   try {
-    await ensureFactoryLaunchBootstrap("[api] stats bootstrap");
     let stats = await safeDb(() => updateStatsCache(), null);
     if (stats && stats.tokensLaunched === 0) {
       try {
-        await reconcileFactoryLaunches({ mode: "full" });
+        await reconcileFactoryLaunches({ mode: "fast" });
         stats = await safeDb(() => updateStatsCache(), stats);
       } catch (err) {
         console.warn("[api] stats reconciliation bootstrap skipped", err);
@@ -655,16 +533,20 @@ router.get("/api/tokens/trending", (req, res, next) => {
 router.get("/api/tokens/:id/transactions", async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit ?? 25), 100);
-    const launch = await findLaunchByIdOrAddress(req.params.id);
-    if (!launch || launch.pendingIndexing || !launch.tokenMasterAddress || !launch.presalePoolAddress) {
-      console.log("[api] token transactions unresolved; returning empty", {
-        requestedId: req.params.id,
-        launchId: launch?.id ?? null,
-        tokenMasterAddress: launch?.tokenMasterAddress ?? null,
-        presalePoolAddress: launch?.presalePoolAddress ?? null,
-      });
-      return res.json([]);
-    }
+    const launch = await prisma.launch.findFirst({
+      where: {
+        ...currentFactoryLaunchWhere(),
+        OR: [
+          { id: req.params.id },
+          { tokenMasterAddress: req.params.id },
+          { presalePoolAddress: req.params.id },
+          { tokenMasterAddress: { in: addressVariants(req.params.id) } },
+          { presalePoolAddress: { in: addressVariants(req.params.id) } },
+          { txHash: req.params.id },
+        ],
+      },
+    });
+    if (!launch) return res.json([]);
     const transactions = await prisma.transaction.findMany({
       where: { launchId: launch.id },
       include: { launch: true },
@@ -680,20 +562,7 @@ router.get("/api/tokens/:id/presale/contribution", async (req, res, next) => {
   try {
     const wallet = tonAddressSchema.parse(String(req.query.wallet ?? ""));
     const launch = await findLaunchByIdOrAddress(req.params.id);
-    if (!launch || launch.pendingIndexing || !launch.tokenMasterAddress || !launch.presalePoolAddress) {
-      console.log("[api] presale contribution unresolved; returning zero state", {
-        requestedId: req.params.id,
-        launchId: launch?.id ?? null,
-        tokenMasterAddress: launch?.tokenMasterAddress ?? null,
-        presalePoolAddress: launch?.presalePoolAddress ?? null,
-      });
-      return res.json({
-        amountTon: 0,
-        tokensOwed: 0,
-        claimed: false,
-        pending: true,
-      });
-    }
+    if (!launch) return res.status(404).json({ message: "Launch not found" });
 
     const walletVariants = addressVariants(wallet);
     const [contribution, claimed] = await Promise.all([
@@ -983,53 +852,15 @@ function findLaunchByIdOrAddress(id: string) {
   return query().then(async (launch) => {
     if (launch) return launch;
     await ensureFactoryLaunchBootstrap("[api] launch lookup bootstrap");
-    const resolved = await query();
-    if (!resolved) {
-      console.warn("[api] launch lookup unresolved", {
-        requestedId: id,
-        factoryAddress: config.factoryAddress,
-      });
-    }
-    return resolved;
+    return query();
   });
 }
 
 async function ensureFactoryLaunchBootstrap(reason: string) {
-  const [launchCount, unresolvedLaunchCount, onChainLaunchCount] = await Promise.all([
-    safeDb(() => prisma.launch.count({ where: currentFactoryLaunchWhere() }), 0),
-    safeDb(
-      () =>
-        prisma.launch.count({
-          where: {
-            ...currentFactoryLaunchWhere(),
-            OR: [
-              { pendingIndexing: true },
-              { tokenMasterAddress: null },
-              { presalePoolAddress: null },
-            ],
-          },
-        }),
-      0,
-    ),
-    safeAsync(() => readOnChainLaunchCount(), 0),
-  ]);
-  const launchLag = Math.max(onChainLaunchCount - launchCount, 0);
-  console.log("[api] bootstrap check", {
-    reason,
-    factoryAddress: config.factoryAddress,
-    launchCount,
-    unresolvedLaunchCount,
-    onChainLaunchCount,
-    launchLag,
-  });
-  if (launchCount > 0 && unresolvedLaunchCount === 0 && launchLag === 0) return;
+  const launchCount = await safeDb(() => prisma.launch.count({ where: currentFactoryLaunchWhere() }), 0);
+  if (launchCount > 0) return;
   try {
-    await reconcileFactoryLaunches({
-      mode:
-        launchCount === 0 || unresolvedLaunchCount > 0 || launchLag > 0
-          ? "full"
-          : "fast",
-    });
+    await reconcileFactoryLaunches({ mode: "fast" });
   } catch (err) {
     console.warn(reason, err);
   }
@@ -1123,15 +954,6 @@ async function safeDb<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-async function safeAsync<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
-  try {
-    return await operation();
-  } catch (err) {
-    console.error("[api] async operation failed", err);
-    return fallback;
-  }
-}
-
 function emptyStats(_note: string) {
   return {
     tokensLaunched: 0,
@@ -1171,56 +993,6 @@ function emptyProfile(wallet: string, note: string) {
 function publicUrl(req: Request, path: string) {
   const base = config.publicBaseUrl || `${req.protocol}://${req.get("host")}`;
   return `${base.replace(/^http:\/\//, "https://")}${path}`;
-}
-
-function isOptimisticRecentLaunchId(value: string) {
-  return value.startsWith("recent-");
-}
-
-function buildPendingLaunchResponse(id: string) {
-  const now = new Date();
-  const later = new Date(now.getTime() + 60 * 60 * 1000);
-  return {
-    id,
-    address: null,
-    presalePoolAddress: null,
-    tokenMasterAddress: null,
-    factoryAddress: config.factoryAddress || null,
-    txHash: null,
-    metadataUrl: null,
-    name: "Pending Launch",
-    symbol: "PENDING",
-    description: "",
-    imageUrl: "https://tonpad.org/icon.png",
-    totalSupply: 0,
-    decimals: 9,
-    allocations: {
-      presale: 0,
-      liquidity: 0,
-      creator: 0,
-    },
-    presale: {
-      rate: 0,
-      softCap: 0,
-      hardCap: 0,
-      raised: 0,
-      contributors: 0,
-      startTime: now.toISOString(),
-      endTime: later.toISOString(),
-      status: "upcoming",
-    },
-    liquidityPercent: 0,
-    social: {},
-    creator: "",
-    createdAt: now.toISOString(),
-    price: 0,
-    priceChange24h: 0,
-    marketCap: 0,
-    volume24h: 0,
-    holders: 0,
-    setupState: "preparing",
-    status: "pending",
-  };
 }
 
 function currentFactoryLaunchWhere(): Prisma.LaunchWhereInput {

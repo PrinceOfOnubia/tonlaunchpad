@@ -1,5 +1,4 @@
 import type { Launch, Transaction } from "@prisma/client";
-import { computeAllocationBreakdown } from "./allocation";
 
 type TransactionWithLaunch = Transaction & { launch?: Launch | null };
 
@@ -7,49 +6,16 @@ export function launchStatus(launch: Launch): "upcoming" | "live" | "succeeded" 
   return launch.status;
 }
 
-export function computeStatus(
-  launch: Pick<Launch, "startTime" | "endTime" | "raisedTon" | "softCap" | "status"> & {
-    hardCap?: number;
-  },
-) {
-  if (launch.status === "succeeded") return "succeeded";
-  if (launch.status === "failed") return "failed";
+export function computeStatus(launch: Pick<Launch, "startTime" | "endTime" | "raisedTon" | "softCap" | "status">) {
   const now = Date.now();
   const start = launch.startTime.getTime();
   const end = launch.endTime.getTime();
   if (now < start) return "upcoming";
-  if (launch.hardCap !== undefined && launch.raisedTon >= launch.hardCap) return "succeeded";
   if (now <= end) return "live";
   return launch.raisedTon >= launch.softCap ? "succeeded" : "failed";
 }
 
 export function launchToToken(launch: Launch) {
-  const computedBreakdown = computeAllocationBreakdown({
-    totalSupply: launch.totalSupply,
-    presalePercent: launch.presaleAllocation,
-    liquidityPercentTokens: launch.liquidityAllocation,
-    creatorPercent: launch.creatorAllocation,
-    totalRaisedTon: launch.raisedTon,
-    liquidityPercentOfRaised: launch.liquidityPercent,
-    platformTonFeeBps: launch.platformTonFeeBps,
-    platformTokenFeeBps: launch.platformTokenFeeBps,
-    liquidityTreasurySet: !!launch.liquidityTreasury,
-    burnedTokens: launch.burnedTokens ?? 0,
-  });
-  const allocationBreakdown = {
-    presaleTON: launch.presaleTON ?? computedBreakdown.presaleTON,
-    liquidityTON: launch.liquidityTON ?? computedBreakdown.liquidityTON,
-    platformFeeTON: launch.platformFeeTON ?? computedBreakdown.platformFeeTON,
-    creatorTON: launch.creatorTON ?? computedBreakdown.creatorTON,
-    presaleTokens: launch.presaleTokens ?? computedBreakdown.presaleTokens,
-    liquidityTokens: launch.liquidityTokens ?? computedBreakdown.liquidityTokens,
-    creatorTokens: launch.creatorTokens ?? computedBreakdown.creatorTokens,
-    presaleTokenFee: computedBreakdown.presaleTokenFee,
-    burnedTokens: launch.burnedTokens ?? computedBreakdown.burnedTokens,
-    liquidityReceiver:
-      launch.liquidityPercent > 0 && launch.liquidityTreasury ? "liquidity" : "creator",
-  } as const;
-
   return {
     id: launch.id,
     address: launch.tokenMasterAddress ?? null,
@@ -59,7 +25,7 @@ export function launchToToken(launch: Launch) {
     txHash: launch.txHash,
     tokenName: launch.tokenName,
     name: launch.tokenName,
-    symbol: launch.symbol.toUpperCase(),
+    symbol: launch.symbol,
     description: launch.description,
     imageUrl: launch.logoUrl,
     metadataUrl: launch.metadataUrl,
@@ -83,12 +49,10 @@ export function launchToToken(launch: Launch) {
       maxContribution: launch.maxContribution ?? undefined,
     },
     liquidityPercent: launch.liquidityPercent,
-    allocationBreakdown,
     social: asSocial(launch.social),
     platformFees: {
       tonTreasury: launch.platformTonTreasury,
       tokenTreasury: launch.platformTokenTreasury,
-      liquidityTreasury: launch.liquidityTreasury,
       tonFeeBps: launch.platformTonFeeBps,
       tokenFeeBps: launch.platformTokenFeeBps,
     },

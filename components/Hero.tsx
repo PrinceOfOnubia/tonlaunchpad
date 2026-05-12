@@ -20,7 +20,7 @@ export function Hero() {
         {/* Subtitle */}
         <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-ink-500 sm:text-lg">
           Create a token, run a capped presale, let contributors claim after success, and handle
-          liquidity manually with a simpler on-chain flow. Born.
+          liquidity manually with a simpler on-chain flow.
         </p>
 
         {/* CTAs */}

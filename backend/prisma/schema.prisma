@@ -49,13 +49,6 @@ model Launch {
   presaleAllocation       Float         @default(0)
   liquidityAllocation     Float         @default(0)
   creatorAllocation       Float         @default(0)
-  presaleTokens           Float         @default(0)
-  liquidityTokens         Float         @default(0)
-  creatorTokens           Float         @default(0)
-  presaleTON              Float         @default(0)
-  liquidityTON            Float         @default(0)
-  platformFeeTON          Float         @default(0)
-  creatorTON              Float         @default(0)
   platformTonTreasury     String?
   platformTokenTreasury   String?
   liquidityTreasury       String?
@@ -66,7 +59,6 @@ model Launch {
   platformTokenFeeTokenTreasuryShare Float  @default(0)
   liquidityTonAmount      Float         @default(0)
   creatorTreasuryAmount   Float         @default(0)
-  burnedTokens            Float         @default(0)
   social                  Json?
   pendingIndexing         Boolean       @default(true)
   lastIndexedAt           DateTime?

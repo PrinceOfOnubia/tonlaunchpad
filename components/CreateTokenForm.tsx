@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, type ChangeEvent, type ReactNode } from "react";
+import { useState, useMemo, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import {
@@ -14,11 +14,9 @@ import {
   Wallet,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { computeAllocationBreakdown } from "@/lib/allocationMath";
 import {
   cn,
   clamp,
-  formatNumber,
   formatTon,
   fromDatetimeLocal,
   toDatetimeLocal,
@@ -33,7 +31,6 @@ import {
 } from "@/lib/tonLaunchpad";
 import { tonviewerAddressUrl } from "@/lib/explorer";
 import { saveRecentLaunch, tokenFromLaunchInput } from "@/lib/recentLaunches";
-import { loadRuntimeConfig } from "@/lib/runtimeConfig";
 import { TokenPreview } from "./TokenPreview";
 
 type Step = 0 | 1 | 2 | 3;
@@ -44,12 +41,6 @@ const STEPS: { title: string; subtitle: string }[] = [
   { title: "Review", subtitle: "Confirm & deploy" },
 ];
 
-/**
- * Total supply is fixed by the platform — every launched token gets exactly
- * 1B units. Single source of truth; the form treats this as read-only.
- */
-const FIXED_TOTAL_SUPPLY = 1_000_000_000;
-
 const initialPayload = (): CreateTokenPayload => {
   const now = new Date();
   const start = new Date(now.getTime() + 60 * 60 * 1000); // +1h
@@ -59,7 +50,7 @@ const initialPayload = (): CreateTokenPayload => {
     symbol: "",
     description: "",
     imageUrl: null,
-    totalSupply: FIXED_TOTAL_SUPPLY,
+    totalSupply: 1_000_000_000,
     decimals: 9,
     allocations: { presale: 50, liquidity: 30, creator: 20 },
     presale: {
@@ -104,15 +95,7 @@ interface PricingBreakdown {
 }
 
 function computePricing(d: CreateTokenPayload): PricingBreakdown {
-  const allocationBreakdown = computeAllocationBreakdown({
-    totalSupply: d.totalSupply,
-    presalePercent: d.allocations.presale,
-    liquidityPercentTokens: d.allocations.liquidity,
-    creatorPercent: d.allocations.creator,
-    totalRaisedTon: d.presale.hardCap,
-    liquidityPercentOfRaised: d.liquidityPercent,
-  });
-  const presaleTokens = allocationBreakdown.presaleTokens;
+  const presaleTokens = d.totalSupply * (d.allocations.presale / 100);
   const liquidityTon = d.presale.hardCap * (d.liquidityPercent / 100);
   const listingTokens = d.totalSupply * (d.allocations.liquidity / 100);
 
@@ -146,6 +129,12 @@ function computePricing(d: CreateTokenPayload): PricingBreakdown {
       ? ((listingPriceTon - presalePriceTon) / listingPriceTon) * 100
       : 0;
 
+  let warning: string | null = null;
+  if (presalePriceTon > listingPriceTon && listingPriceTon > 0) {
+    const diff = ((presalePriceTon - listingPriceTon) / listingPriceTon) * 100;
+    warning = `Presale price is ${diff.toFixed(1)}% above listing price — buyers would be underwater at launch.`;
+  }
+
   return {
     rate,
     presaleTokens,
@@ -155,7 +144,7 @@ function computePricing(d: CreateTokenPayload): PricingBreakdown {
     listingPriceTon,
     marketCapTon,
     discountPct,
-    warning: null,
+    warning,
     ok: true,
   };
 }
@@ -186,46 +175,6 @@ function trimZeros(s: string): string {
 }
 
 // =============================================================================
-// Allocation auto-balancer — moving one slider redistributes the others so the
-// total is always exactly 100. The other two keep their relative ratio; if
-// both were at 0, the remainder is split evenly.
-// =============================================================================
-type AllocKey = "presale" | "liquidity" | "creator";
-
-function rebalanceAllocations(
-  current: { presale: number; liquidity: number; creator: number },
-  changed: AllocKey,
-  newValue: number,
-): { presale: number; liquidity: number; creator: number } {
-  const v = clamp(Math.round(newValue), 0, 100);
-  const remaining = 100 - v;
-  const others: AllocKey[] = (["presale", "liquidity", "creator"] as AllocKey[]).filter(
-    (k) => k !== changed,
-  );
-  const [a, b] = others;
-  const aOld = current[a];
-  const bOld = current[b];
-  const otherSum = aOld + bOld;
-
-  let aNew: number;
-  let bNew: number;
-  if (otherSum <= 0) {
-    aNew = Math.floor(remaining / 2);
-    bNew = remaining - aNew;
-  } else {
-    aNew = Math.round((aOld / otherSum) * remaining);
-    bNew = remaining - aNew;
-  }
-
-  return {
-    ...current,
-    [changed]: v,
-    [a]: aNew,
-    [b]: bNew,
-  } as { presale: number; liquidity: number; creator: number };
-}
-
-// =============================================================================
 // PricingBreakdown — visible calculator panel rendered inside Step 3
 // =============================================================================
 function PricingBreakdown({
@@ -248,7 +197,7 @@ function PricingBreakdown({
             liquidity %.
           </div>
         </div>
-        {pricing.ok && pricing.discountPct > 0 && (
+        {pricing.ok && !pricing.warning && pricing.discountPct > 0 && (
           <div className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
             Presale −{pricing.discountPct.toFixed(1)}% vs listing
           </div>
@@ -278,6 +227,12 @@ function PricingBreakdown({
             label="FDV at listing"
             value={formatTon(pricing.marketCapTon)}
           />
+        </div>
+      )}
+
+      {pricing.warning && (
+        <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs font-medium text-red-700 ring-1 ring-red-200">
+          ⚠ {pricing.warning}
         </div>
       )}
     </div>
@@ -312,19 +267,6 @@ export function CreateTokenForm() {
   const [metadataNotice, setMetadataNotice] = useState<string | null>(null);
   const [deployedId, setDeployedId] = useState<string | null>(null);
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
-  const [runtimeFactoryAddress, setRuntimeFactoryAddress] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    void loadRuntimeConfig().then((config) => {
-      if (active) {
-        setRuntimeFactoryAddress(config.factoryAddress);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   // ---------------------------------------------------------------------
   // Validation per step
@@ -449,9 +391,7 @@ export function CreateTokenForm() {
         creator: wallet,
       };
 
-      const runtimeConfig = await loadRuntimeConfig();
-      const factoryAddress = runtimeConfig.factoryAddress;
-      const launchError = getLaunchValidationError(payload, factoryAddress);
+      const launchError = getLaunchValidationError(payload);
       if (launchError) {
         setError(launchError);
         setDeployStatus(null);
@@ -460,12 +400,12 @@ export function CreateTokenForm() {
 
       let transaction;
       try {
-        transaction = buildLaunchTokenTransaction(payload, wallet, factoryAddress);
+        transaction = buildLaunchTokenTransaction(payload, wallet);
       } catch (err) {
         console.error("Launch payload build failed", {
           error: err,
           metadataUrl,
-          factoryAddress,
+          factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
           wallet,
           payload,
         });
@@ -480,7 +420,7 @@ export function CreateTokenForm() {
 
       console.debug("[launch] sendTransaction payload", {
         metadataUrl,
-        factoryAddress,
+        factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
         to: transaction.to,
         amountNano: transaction.amountNano,
         payloadPresent: !!transaction.payload,
@@ -505,7 +445,7 @@ export function CreateTokenForm() {
         console.error("Launch sendTransaction failed", {
           error: err,
           metadataUrl,
-          factoryAddress,
+          factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
           to: transaction.to,
           amountNano: transaction.amountNano,
           validUntil: transaction.validUntil,
@@ -519,11 +459,11 @@ export function CreateTokenForm() {
       console.debug("Launch transaction result BOC", result.boc);
       let launchId = `recent-${Date.now().toString(36)}`;
       const createdAt = new Date().toISOString();
-      const persistedFactoryAddress = factoryAddress ?? undefined;
+      const factoryAddress = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
       let token = tokenFromLaunchInput({
         id: launchId,
         form: payload,
-        factoryAddress: persistedFactoryAddress,
+        factoryAddress,
         createdAt,
       });
       saveRecentLaunch({
@@ -531,7 +471,7 @@ export function CreateTokenForm() {
         name: token.name,
         symbol: token.symbol,
         transactionBoc: result.boc,
-        factoryAddress: persistedFactoryAddress,
+        factoryAddress,
         creator: wallet,
         createdAt,
         poolAddress: null,
@@ -543,7 +483,7 @@ export function CreateTokenForm() {
         const savedToken = await api.tokens.create({
           ...payload,
           transactionBoc: result.boc,
-          factoryAddress: persistedFactoryAddress,
+          factoryAddress,
           tokenMasterAddress: null,
           presalePoolAddress: null,
         });
@@ -554,7 +494,7 @@ export function CreateTokenForm() {
           name: token.name,
           symbol: token.symbol,
           transactionBoc: result.boc,
-          factoryAddress: persistedFactoryAddress,
+          factoryAddress,
           creator: wallet,
           createdAt,
           poolAddress: token.presalePoolAddress ?? null,
@@ -566,7 +506,7 @@ export function CreateTokenForm() {
         setMetadataNotice("Launch submitted successfully. Your presale page will appear shortly.");
       }
 
-      setExplorerUrl(tonviewerAddressUrl(persistedFactoryAddress ?? wallet));
+      setExplorerUrl(tonviewerAddressUrl(factoryAddress ?? wallet));
       setDeployedId(launchId);
       setDeployStatus("Launch transaction submitted.");
     } catch (err) {
@@ -704,16 +644,12 @@ export function CreateTokenForm() {
               <button
                 type="button"
                 onClick={handleDeploy}
-                disabled={!validation.allValid || submitting || !runtimeFactoryAddress}
+                disabled={!validation.allValid || submitting}
                 className="btn-primary"
               >
                 {submitting ? (
                   <>
                     <Loader2 size={16} className="animate-spin" /> Deploying…
-                  </>
-                ) : !runtimeFactoryAddress ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" /> Loading config…
                   </>
                 ) : !wallet ? (
                   <>
@@ -828,13 +764,13 @@ function StepIdentity(props: {
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Total supply" hint="Fixed at 1,000,000,000 by the platform">
+        <Field label="Total supply" required>
           <input
-            type="text"
-            value={data.totalSupply.toLocaleString("en-US")}
-            readOnly
-            disabled
-            className="input-base font-mono cursor-not-allowed bg-ink-50 text-ink-500"
+            type="number"
+            value={data.totalSupply}
+            onChange={(e) => update("totalSupply", Number(e.target.value))}
+            min={1}
+            className="input-base font-mono"
           />
         </Field>
         <Field label="Decimals" hint="Standard is 9 for TON jettons">
@@ -956,34 +892,25 @@ function StepAllocation(props: {
   const { data, patch, sum } = props;
   const ok = sum === 100;
   return (
-    <Section
-      title="Token Allocation"
-      subtitle="Sliders auto-balance to 100% — moving one rebalances the others"
-    >
+    <Section title="Token Allocation" subtitle="Must sum to exactly 100%">
       <div className="space-y-5">
         <AllocSlider
           label="Presale"
           color="bg-ton-500"
           value={data.allocations.presale}
-          onChange={(v) =>
-            patch("allocations", rebalanceAllocations(data.allocations, "presale", v))
-          }
+          onChange={(v) => patch("allocations", { presale: v })}
         />
         <AllocSlider
           label="Liquidity"
           color="bg-ton-300"
           value={data.allocations.liquidity}
-          onChange={(v) =>
-            patch("allocations", rebalanceAllocations(data.allocations, "liquidity", v))
-          }
+          onChange={(v) => patch("allocations", { liquidity: v })}
         />
         <AllocSlider
           label="Creator"
           color="bg-ton-700"
           value={data.allocations.creator}
-          onChange={(v) =>
-            patch("allocations", rebalanceAllocations(data.allocations, "creator", v))
-          }
+          onChange={(v) => patch("allocations", { creator: v })}
         />
       </div>
 
@@ -1148,15 +1075,6 @@ function StepReview({
   imagePreview: string | null;
   pricing: PricingBreakdown;
 }) {
-  const breakdown = computeAllocationBreakdown({
-    totalSupply: data.totalSupply,
-    presalePercent: data.allocations.presale,
-    liquidityPercentTokens: data.allocations.liquidity,
-    creatorPercent: data.allocations.creator,
-    totalRaisedTon: data.presale.hardCap,
-    liquidityPercentOfRaised: data.liquidityPercent,
-  });
-
   return (
     <Section title="Review & Deploy" subtitle="Double-check everything before launching">
       <div className="space-y-3">
@@ -1178,13 +1096,6 @@ function StepReview({
           <ReviewRow label="Presale" value={`${data.allocations.presale}%`} />
           <ReviewRow label="Liquidity" value={`${data.allocations.liquidity}%`} />
           <ReviewRow label="Creator" value={`${data.allocations.creator}%`} />
-        </ReviewSection>
-
-        <ReviewSection title="Token allocation">
-          <ReviewRow label="Buyer claimable presale tokens" value={formatTokenAmount(breakdown.presaleTokens)} />
-          <ReviewRow label="Platform token fee" value={formatTokenAmount(breakdown.presaleTokenFee)} />
-          <ReviewRow label="Liquidity tokens" value={formatTokenAmount(breakdown.liquidityTokens)} />
-          <ReviewRow label="Creator tokens" value={formatTokenAmount(breakdown.creatorTokens)} />
         </ReviewSection>
 
         <ReviewSection title="Presale">
@@ -1214,7 +1125,7 @@ function StepReview({
             label="FDV at listing"
             value={pricing.ok ? formatTon(pricing.marketCapTon) : "—"}
           />
-          {pricing.ok && pricing.discountPct > 0 && (
+          {pricing.ok && pricing.discountPct > 0 && !pricing.warning && (
             <ReviewRow
               label="Presale discount"
               value={`−${pricing.discountPct.toFixed(1)}% vs listing`}
@@ -1222,15 +1133,14 @@ function StepReview({
           )}
         </ReviewSection>
 
-        <ReviewSection title="Raised TON allocation">
-          <ReviewRow label="Buyer raise target" value={formatTon(breakdown.presaleTON)} />
-          <ReviewRow label="Liquidity TON" value={formatTon(breakdown.liquidityTON)} />
-          <ReviewRow label="Platform TON fee" value={formatTon(breakdown.platformFeeTON)} />
-          <ReviewRow label="Creator TON" value={formatTon(breakdown.creatorTON)} />
-        </ReviewSection>
+        {pricing.warning && (
+          <div className="rounded-xl bg-red-50 p-3 text-xs font-medium text-red-700 ring-1 ring-red-200">
+            ⚠ {pricing.warning}
+          </div>
+        )}
 
         <div className="rounded-xl bg-ton-50 p-4 text-sm font-semibold text-ton-700 ring-1 ring-ton-200">
-          Platform fee: 5% of raised TON + 1% of total token supply.
+          Platform fee: 5% of raised TON + 1% token fee.
         </div>
       </div>
     </Section>
@@ -1255,10 +1165,6 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
       <span className="font-mono font-semibold text-ink-900">{value || "—"}</span>
     </div>
   );
-}
-
-function formatTokenAmount(value: number) {
-  return formatNumber(value, 0);
 }
 
 // =============================================================================
@@ -1347,6 +1253,8 @@ function validate(d: CreateTokenPayload) {
     bySteps[2] = { ok: false, reason: "End time must be after start time" };
   else if (d.liquidityPercent < 0 || d.liquidityPercent > 100)
     bySteps[2] = { ok: false, reason: "Liquidity % must be 0-100" };
+  else if (pricing.warning)
+    bySteps[2] = { ok: false, reason: pricing.warning };
 
   const allValid = Object.values(bySteps).every((c) => c.ok);
   return { bySteps, allValid };

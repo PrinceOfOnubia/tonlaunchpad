@@ -14,9 +14,8 @@ export async function run(provider: NetworkProvider) {
 
   const platformTonTreasury = requiredAddress('PLATFORM_TON_TREASURY');
   const platformTokenTreasury = requiredAddress('PLATFORM_TOKEN_TREASURY');
-  const deploymentNonce = BigInt(process.env.DEPLOYMENT_NONCE ?? Date.now());
 
-  const factory = provider.open(await LaunchpadFactory.fromInit(owner, deploymentNonce));
+  const factory = provider.open(await LaunchpadFactory.fromInit(owner));
   await factory.send(provider.sender(), { value: toNano('0.2') }, { $$type: 'Deploy', queryId: BigInt(0) });
   await provider.waitForDeploy(factory.address);
 
@@ -24,7 +23,6 @@ export async function run(provider: NetworkProvider) {
   await factory.send(provider.sender(), { value: toNano('0.05') }, { $$type: 'UpdatePlatformTokenTreasury', newAddress: platformTokenTreasury });
 
   console.log('NEW_FACTORY_ADDRESS=' + factory.address.toString());
-  console.log('DEPLOYMENT_NONCE=' + deploymentNonce.toString());
   console.log('Platform TON treasury set to', platformTonTreasury.toString());
   console.log('Platform token treasury set to', platformTokenTreasury.toString());
 }

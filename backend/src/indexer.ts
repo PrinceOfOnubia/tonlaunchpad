@@ -5,9 +5,11 @@ import { config } from "./config";
 import { prisma } from "./db";
 import { computeStatus } from "./mappers";
 import { addressVariants } from "./address";
-import { buildPersistedAllocationFields } from "./allocation";
 
 const NANO = 1_000_000_000;
+const FAST_POLL_LIMIT = 6;
+const FULL_POLL_LIMIT = 24;
+const REFRESH_LIMIT = 3;
 const REFRESH_STALE_MS = 20_000;
 const METHOD_DELAY_MS = 120;
 
@@ -32,21 +34,9 @@ export async function reconcileFactoryLaunches(options: { mode?: ReconcileMode }
   const indexer = new TonpadIndexer();
   const mode = options.mode ?? "full";
   await indexer.pollFactory({ mode });
-  await indexer.refreshLaunches({
-    maxLaunches: config.indexerRefreshLimit,
-    includeHolders: mode === "full",
-  });
-}
-
-export async function readOnChainLaunchCount() {
-  if (!config.factoryAddress) return 0;
-  const client = new TonClient({
-    endpoint: config.toncenterEndpoint,
-    apiKey: config.toncenterApiKey || undefined,
-  });
-  const factory = Address.parse(config.factoryAddress);
-  const countResult = await client.runMethod(factory, "getLaunchCount");
-  return Number(countResult.stack.readBigNumber());
+  if (mode === "full") {
+    await indexer.refreshLaunches({ maxLaunches: REFRESH_LIMIT, includeHolders: true });
+  }
 }
 
 class TonpadIndexer {
@@ -63,14 +53,9 @@ class TonpadIndexer {
       console.log("[indexer] tick start", {
         network: config.network,
         factoryAddress: config.factoryAddress,
-        intervalMs: config.indexerIntervalMs,
-        refreshLimit: config.indexerRefreshLimit,
       });
       await this.pollFactory({ mode: "full" });
-      await this.refreshLaunches({
-        maxLaunches: config.indexerRefreshLimit,
-        includeHolders: true,
-      });
+      await this.refreshLaunches({ maxLaunches: REFRESH_LIMIT, includeHolders: true });
       console.log("[indexer] tick complete");
     } catch (err) {
       console.warn("[indexer] tick failed", err);
@@ -92,8 +77,7 @@ class TonpadIndexer {
 
     const launchIndexes = buildLaunchIndexes(
       launchCount,
-      options.maxLaunches ??
-        (mode === "fast" ? config.indexerFastPollLimit : config.indexerFullPollLimit),
+      options.maxLaunches ?? (mode === "fast" ? FAST_POLL_LIMIT : FULL_POLL_LIMIT),
     );
 
     for (const i of launchIndexes) {
@@ -104,10 +88,16 @@ class TonpadIndexer {
         const creatorWallet = result.stack.readAddress().toString();
         const discoveredAt = new Date();
 
-        const existing = await this.findLaunchReconciliationCandidate({
-          creatorWallet,
-          presalePoolAddress,
-          tokenMasterAddress,
+        const existing = await prisma.launch.findFirst({
+          where: {
+            factoryAddress: { in: addressVariants(config.factoryAddress) },
+            OR: [
+              { presalePoolAddress: { in: addressVariants(presalePoolAddress) } },
+              { tokenMasterAddress: { in: addressVariants(tokenMasterAddress) } },
+              { creatorWallet: { in: addressVariants(creatorWallet) }, pendingIndexing: true },
+            ],
+          },
+          orderBy: { createdAt: "desc" },
         });
 
         if (existing) {
@@ -128,29 +118,28 @@ class TonpadIndexer {
             presalePoolAddress,
             tokenMasterAddress,
           });
-          if ((mode === "full" || shouldRefreshLaunch(updated)) && updated.tokenMasterAddress && updated.presalePoolAddress) {
+          if (mode === "full" && shouldRefreshLaunch(updated)) {
             await this.hydrateLaunch(updated, { includeHolders: false });
           }
           await pause(METHOD_DELAY_MS);
           continue;
         }
 
-        const created =
-          mode === "full"
-            ? await this.createLaunchWithHydrationFallback({
-                index: i,
-                discoveredAt,
-                tokenMasterAddress,
-                presalePoolAddress,
-                creatorWallet,
-              })
-            : await this.createPlaceholderLaunch({
-                index: i,
-                discoveredAt,
-                tokenMasterAddress,
-                presalePoolAddress,
-                creatorWallet,
-              });
+        const created = mode === "full"
+          ? await this.createHydratedLaunch({
+              index: i,
+              discoveredAt,
+              tokenMasterAddress,
+              presalePoolAddress,
+              creatorWallet,
+            })
+          : await this.createPlaceholderLaunch({
+              index: i,
+              discoveredAt,
+              tokenMasterAddress,
+              presalePoolAddress,
+              creatorWallet,
+            });
         console.log("[indexer] discovered launch", {
           id: created.id,
           presalePoolAddress,
@@ -168,51 +157,6 @@ class TonpadIndexer {
     }
   }
 
-  private async findLaunchReconciliationCandidate(args: {
-    creatorWallet: string;
-    presalePoolAddress: string;
-    tokenMasterAddress: string;
-  }) {
-    const exactCurrentFactory = await prisma.launch.findFirst({
-      where: {
-        factoryAddress: { in: addressVariants(config.factoryAddress) },
-        OR: [
-          { presalePoolAddress: { in: addressVariants(args.presalePoolAddress) } },
-          { tokenMasterAddress: { in: addressVariants(args.tokenMasterAddress) } },
-          { creatorWallet: { in: addressVariants(args.creatorWallet) }, pendingIndexing: true },
-        ],
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (exactCurrentFactory) {
-      return exactCurrentFactory;
-    }
-
-    const fallbackPending = await prisma.launch.findFirst({
-      where: {
-        creatorWallet: { in: addressVariants(args.creatorWallet) },
-        OR: [
-          { pendingIndexing: true },
-          { tokenMasterAddress: null },
-          { presalePoolAddress: null },
-        ],
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (fallbackPending) {
-      console.warn("[indexer] adopting unresolved launch from mismatched factory", {
-        launchId: fallbackPending.id,
-        previousFactoryAddress: fallbackPending.factoryAddress,
-        currentFactoryAddress: config.factoryAddress,
-        creatorWallet: args.creatorWallet,
-      });
-      return fallbackPending;
-    }
-
-    return null;
-  }
-
   async refreshLaunches(options: { maxLaunches?: number; includeHolders?: boolean } = {}) {
     const staleBefore = new Date(Date.now() - REFRESH_STALE_MS);
     const launches = await prisma.launch.findMany({
@@ -223,7 +167,7 @@ class TonpadIndexer {
         OR: [{ pendingIndexing: true }, { lastIndexedAt: null }, { lastIndexedAt: { lt: staleBefore } }],
       },
       orderBy: [{ pendingIndexing: "desc" }, { lastIndexedAt: "asc" }, { createdAt: "desc" }],
-      take: options.maxLaunches ?? config.indexerRefreshLimit,
+      take: options.maxLaunches ?? REFRESH_LIMIT,
     });
 
     for (const [index, launch] of launches.entries()) {
@@ -284,7 +228,6 @@ class TonpadIndexer {
         liquidityTreasury: null,
         platformTonFeeBps: 500,
         platformTokenFeeBps: 100,
-        burnedTokens: 0,
         pendingIndexing: true,
       },
     });
@@ -327,7 +270,6 @@ class TonpadIndexer {
       liquidityTreasury: null,
       platformTonFeeBps: 500,
       platformTokenFeeBps: 100,
-      burnedTokens: 0,
     });
 
     return prisma.launch.create({
@@ -356,13 +298,6 @@ class TonpadIndexer {
         presaleAllocation: snapshot.presaleAllocation,
         liquidityAllocation: snapshot.liquidityAllocation,
         creatorAllocation: snapshot.creatorAllocation,
-        presaleTokens: snapshot.presaleTokens,
-        liquidityTokens: snapshot.liquidityTokens,
-        creatorTokens: snapshot.creatorTokens,
-        presaleTON: snapshot.presaleTON,
-        liquidityTON: snapshot.liquidityTON,
-        platformFeeTON: snapshot.platformFeeTON,
-        creatorTON: snapshot.creatorTON,
         platformTonTreasury: snapshot.platformTonTreasury,
         platformTokenTreasury: snapshot.platformTokenTreasury,
         liquidityTreasury: snapshot.liquidityTreasury,
@@ -373,31 +308,10 @@ class TonpadIndexer {
         platformTokenFeeTokenTreasuryShare: snapshot.platformTokenFeeTokenTreasuryShare,
         liquidityTonAmount: snapshot.liquidityTonAmount,
         creatorTreasuryAmount: snapshot.creatorTreasuryAmount,
-        burnedTokens: snapshot.burnedTokens,
         pendingIndexing: false,
         lastIndexedAt: args.discoveredAt,
       },
     });
-  }
-
-  private async createLaunchWithHydrationFallback(args: {
-    index: number;
-    discoveredAt: Date;
-    tokenMasterAddress: string;
-    presalePoolAddress: string;
-    creatorWallet: string;
-  }) {
-    try {
-      return await this.createHydratedLaunch(args);
-    } catch (err) {
-      console.warn("[indexer] launch hydration failed during discovery; creating placeholder", {
-        index: args.index,
-        presalePoolAddress: args.presalePoolAddress,
-        tokenMasterAddress: args.tokenMasterAddress,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return this.createPlaceholderLaunch(args);
-    }
   }
 
   private async hydrateLaunch(
@@ -431,13 +345,6 @@ class TonpadIndexer {
         presaleAllocation: snapshot.presaleAllocation,
         liquidityAllocation: snapshot.liquidityAllocation,
         creatorAllocation: snapshot.creatorAllocation,
-        presaleTokens: snapshot.presaleTokens,
-        liquidityTokens: snapshot.liquidityTokens,
-        creatorTokens: snapshot.creatorTokens,
-        presaleTON: snapshot.presaleTON,
-        liquidityTON: snapshot.liquidityTON,
-        platformFeeTON: snapshot.platformFeeTON,
-        creatorTON: snapshot.creatorTON,
         platformTonTreasury: snapshot.platformTonTreasury,
         platformTokenTreasury: snapshot.platformTokenTreasury,
         liquidityTreasury: snapshot.liquidityTreasury,
@@ -448,7 +355,6 @@ class TonpadIndexer {
         platformTokenFeeTokenTreasuryShare: snapshot.platformTokenFeeTokenTreasuryShare,
         liquidityTonAmount: snapshot.liquidityTonAmount,
         creatorTreasuryAmount: snapshot.creatorTreasuryAmount,
-        burnedTokens: snapshot.burnedTokens,
         pendingIndexing: false,
         lastIndexedAt: new Date(),
       },
@@ -496,7 +402,6 @@ class TonpadIndexer {
     liquidityTreasury: string | null;
     platformTonFeeBps: number;
     platformTokenFeeBps: number;
-    burnedTokens: number;
   }) {
     if (!launch.tokenMasterAddress || !launch.presalePoolAddress) {
       throw new Error("Launch snapshot requires token and pool addresses");
@@ -554,7 +459,6 @@ class TonpadIndexer {
     const liquidityTonAmount = fromNano(stateStack.readBigNumber());
     const creatorTreasuryAmount = fromNano(stateStack.readBigNumber());
     stateStack.readBoolean(); // tokenFeesRouted
-    const burnedTokensRaw = readOptionalBigNumber(stateStack, 0n);
 
     tokenStack.readAddress(); // factory
     const tokenName = tokenStack.readString();
@@ -585,21 +489,8 @@ class TonpadIndexer {
             endTime,
             raisedTon: totalRaised,
             softCap,
-            hardCap,
             status: failed ? "failed" : "upcoming",
           });
-    const allocationFields = buildPersistedAllocationFields({
-      totalSupply,
-      presalePercent: presaleAllocation,
-      liquidityPercentTokens: liquidityAllocation,
-      creatorPercent: creatorAllocation,
-      totalRaisedTon: totalRaised,
-      liquidityPercentOfRaised,
-      platformTonFeeBps,
-      platformTokenFeeBps,
-      liquidityTreasurySet,
-      burnedTokens: fromTokenUnits(burnedTokensRaw, decimals),
-    });
 
     return {
       factoryAddress: poolFactory,
@@ -627,19 +518,11 @@ class TonpadIndexer {
       presaleAllocation,
       liquidityAllocation,
       creatorAllocation,
-      presaleTokens: allocationFields.presaleTokens,
-      liquidityTokens: allocationFields.liquidityTokens,
-      creatorTokens: allocationFields.creatorTokens,
-      presaleTON: allocationFields.presaleTON,
-      liquidityTON: allocationFields.liquidityTON,
-      platformFeeTON: allocationFields.platformFeeTON,
-      creatorTON: allocationFields.creatorTON,
       platformTonTreasury,
       platformTokenTreasury,
       liquidityTreasury: liquidityTreasurySet ? liquidityTreasury : null,
       platformTonFeeBps,
       platformTokenFeeBps,
-      burnedTokens: fromTokenUnits(burnedTokensRaw, decimals),
       platformTokenFeeAmount: fromTokenUnits(platformTokenFeeRaw, decimals),
       platformTokenFeeTonTreasuryShare: fromTokenUnits(platformTokenFeeTonShareRaw, decimals),
       platformTokenFeeTokenTreasuryShare: fromTokenUnits(platformTokenFeeTokenShareRaw, decimals),
@@ -762,18 +645,5 @@ function readOffchainMetadataUrl(cell: Cell) {
     return slice.loadStringTail();
   } catch {
     return null;
-  }
-}
-
-function readOptionalBigNumber(
-  stack: {
-    readBigNumber: () => bigint;
-  },
-  fallback: bigint,
-) {
-  try {
-    return stack.readBigNumber();
-  } catch {
-    return fallback;
   }
 }

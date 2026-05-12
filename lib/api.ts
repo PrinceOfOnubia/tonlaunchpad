@@ -16,7 +16,6 @@ import type {
   UserProfile,
   UserPortfolio,
 } from "./types";
-import type { PublicRuntimeConfig } from "./runtimeConfig";
 
 const RAW_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
 const API_URL = RAW_API_URL && !RAW_API_URL.endsWith("/api") ? `${RAW_API_URL}/api` : RAW_API_URL;
@@ -157,10 +156,6 @@ export interface CreateLaunchRequest extends CreateTokenPayload {
 }
 
 export const api = {
-  runtime: {
-    config: () => requestSameOrigin<PublicRuntimeConfig>("/api/runtime-config"),
-  },
-
   tokens: {
     list: (params: TokenListParams = {}, signal?: AbortSignal) =>
       request<Paginated<Token>>("/launches", { query: params as Record<string, never>, signal }),

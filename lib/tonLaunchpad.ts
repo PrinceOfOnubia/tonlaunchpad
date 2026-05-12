@@ -1,6 +1,5 @@
 import { Address, beginCell, toNano } from "@ton/core";
 import { storeLaunchToken, type LaunchToken } from "@/build/Launchpad/Launchpad_LaunchpadFactory";
-import { getCachedFactoryAddress } from "./runtimeConfig";
 import type { CreateTokenPayload } from "./types";
 
 export interface LaunchTransaction {
@@ -11,6 +10,7 @@ export interface LaunchTransaction {
 }
 
 const CONTRIBUTE_OPCODE = 443500403;
+const CREATOR_CLAIM_TREASURY_OPCODE = 1459145241;
 const LAUNCH_VALUE_TON = "1";
 export const DEFAULT_TOKEN_IMAGE_URL = "https://tonpad.org/icon.png";
 export const DEFAULT_TOKEN_METADATA_URL = "https://tonpad.org/default-token-metadata.json";
@@ -22,10 +22,9 @@ export function getTonConnectValidUntil() {
 export function buildLaunchTokenTransaction(
   form: CreateTokenPayload,
   creatorWallet: string,
-  factoryAddressOverride?: string | null,
 ): LaunchTransaction {
   const factoryAddress = requiredAddress(
-    factoryAddressOverride ?? getCachedFactoryAddress(),
+    process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
     "NEXT_PUBLIC_FACTORY_ADDRESS",
   );
   const creatorAddress = requiredAddress(creatorWallet, "connected wallet address");
@@ -77,13 +76,21 @@ export function buildContributeTransaction(poolAddress: string, amountTon: numbe
   };
 }
 
-export function getLaunchValidationError(
-  form: CreateTokenPayload,
-  factoryAddressOverride?: string | null,
-): string | null {
+export function buildCreatorClaimTreasuryTransaction(poolAddress: string): LaunchTransaction {
+  const pool = requiredAddress(poolAddress, "presale pool address");
+  const body = beginCell().storeUint(CREATOR_CLAIM_TREASURY_OPCODE, 32).endCell();
+  return {
+    to: pool.toString(),
+    amountNano: toNano("1").toString(),
+    payload: bytesToBase64(body.toBoc()),
+    validUntil: getTonConnectValidUntil(),
+  };
+}
+
+export function getLaunchValidationError(form: CreateTokenPayload): string | null {
   try {
     normalizeLaunchConfig(form);
-    requiredAddress(factoryAddressOverride ?? getCachedFactoryAddress(), "NEXT_PUBLIC_FACTORY_ADDRESS");
+    requiredAddress(process.env.NEXT_PUBLIC_FACTORY_ADDRESS, "NEXT_PUBLIC_FACTORY_ADDRESS");
     return null;
   } catch (err) {
     return errorMessage(err);
@@ -203,7 +210,7 @@ function buildOffchainMetadataCell(url: string) {
   return beginCell().storeUint(1, 8).storeStringTail(url).endCell();
 }
 
-function requiredAddress(value: string | null | undefined, label: string): Address {
+function requiredAddress(value: string | undefined, label: string): Address {
   if (!value?.trim()) throw new Error(`${label} is not configured.`);
   try {
     return Address.parse(value);

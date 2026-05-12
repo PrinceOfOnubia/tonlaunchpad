@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { FOOTER_FOLLOW_LINKS, FOOTER_PLATFORM_LINKS } from "@/lib/footerLinks";
 import { Logo } from "./Logo";
 
 export function Footer() {
@@ -11,13 +10,21 @@ export function Footer() {
             <Logo />
             <p className="mt-3 max-w-md text-sm text-ink-500">
               Fair and transparent TON presales. Simple token launches, on-chain claims, refunds,
-              and automatic TON payout routing on successful closes.
+              and creator treasury release.
             </p>
           </div>
 
-          <FooterCol title="Platform" links={FOOTER_PLATFORM_LINKS} />
+          <FooterCol title="Platform" links={[
+            { href: "/tokens", label: "Browse tokens" },
+            { href: "/create", label: "Launch a token" },
+            { href: "/profile", label: "My portfolio" },
+          ]} />
 
-          <FooterCol title="Follow us" links={FOOTER_FOLLOW_LINKS} />
+          <FooterCol title="Follow us" links={[
+            // TODO: replace with your real handles before going live
+            { href: "https://twitter.com/tonpad", label: "Twitter / X", external: true },
+            { href: "https://t.me/tonpad", label: "Telegram", external: true },
+          ]} />
         </div>
 
         <div className="mt-8 flex flex-col items-start justify-between gap-2 border-t border-ink-100 pt-6 text-xs text-ink-400 sm:flex-row sm:items-center">
@@ -34,7 +41,7 @@ function FooterCol({
   links,
 }: {
   title: string;
-  links: readonly { href: string; label: string; external?: boolean }[];
+  links: { href: string; label: string; external?: boolean }[];
 }) {
   return (
     <div>
