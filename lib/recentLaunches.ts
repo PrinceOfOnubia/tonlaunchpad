@@ -47,6 +47,53 @@ export function getRecentLaunchToken(id: string): Token | null {
   return getRecentLaunches().find((launch) => launch.id === id)?.token ?? null;
 }
 
+export function mergePendingTokenWithRecent(id: string, token: Token): Token {
+  const recent = getRecentLaunchToken(id);
+  if (!recent) return token;
+  const unresolved =
+    !token.address &&
+    !token.tokenMasterAddress &&
+    !token.presalePoolAddress &&
+    (token.name === "Pending Launch" || token.totalSupply === 0);
+
+  if (!unresolved) return token;
+
+  return normalizeToken({
+    ...recent,
+    ...token,
+    id,
+    name: recent.name,
+    symbol: recent.symbol,
+    description: recent.description,
+    imageUrl: recent.imageUrl,
+    bannerUrl: recent.bannerUrl,
+    metadataUrl: recent.metadataUrl,
+    totalSupply: recent.totalSupply,
+    decimals: recent.decimals,
+    allocations: recent.allocations,
+    liquidityPercent: recent.liquidityPercent,
+    social: recent.social,
+    creator: recent.creator,
+    createdAt: recent.createdAt,
+    allocationBreakdown:
+      token.allocationBreakdown && token.allocationBreakdown.presaleTokens > 0
+        ? token.allocationBreakdown
+        : recent.allocationBreakdown,
+    presale: {
+      ...recent.presale,
+      ...token.presale,
+      raised: token.presale?.raised ?? recent.presale.raised,
+      contributors: token.presale?.contributors ?? recent.presale.contributors,
+      status: token.presale?.status ?? recent.presale.status,
+    },
+    address: token.address ?? recent.address,
+    tokenMasterAddress: token.tokenMasterAddress ?? recent.tokenMasterAddress,
+    presalePoolAddress: token.presalePoolAddress ?? recent.presalePoolAddress,
+    txHash: token.txHash ?? recent.txHash,
+    setupState: token.setupState ?? recent.setupState,
+  });
+}
+
 export function recentLaunchesPage(params: TokenListParams = {}): Paginated<Token> {
   let items = getRecentLaunches().map((launch) => withDerivedStatus(launch.token));
 

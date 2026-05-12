@@ -8,6 +8,7 @@ import { api } from "./api";
 import {
   emptyPortfolio,
   getRecentLaunchToken,
+  mergePendingTokenWithRecent,
   normalizeToken,
   recentCreatedTokens,
   recentLaunchesPage,
@@ -63,7 +64,8 @@ export function useTrendingTokens(limit = 6, config: SWRConfiguration = {}) {
 export function useToken(id: string | null | undefined, config: SWRConfiguration = {}) {
   return useSWR(id ? (["token", id] as const) : null, async ([, i]) => {
     try {
-      return normalizeToken(await api.tokens.get(i));
+      const token = normalizeToken(await api.tokens.get(i));
+      return i.startsWith("recent-") ? mergePendingTokenWithRecent(i, token) : token;
     } catch (err) {
       console.warn("Token metadata unavailable; using recent launch cache.", err);
       const cached = getRecentLaunchToken(i);
