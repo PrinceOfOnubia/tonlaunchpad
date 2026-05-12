@@ -10,7 +10,7 @@ export function Footer() {
             <Logo />
             <p className="mt-3 max-w-md text-sm text-ink-500">
               Fair and transparent TON presales. Simple token launches, on-chain claims, refunds,
-              and creator treasury release.
+              and creator treasury release. Born from the $PLANKTON ecosystem.
             </p>
           </div>
 
@@ -22,8 +22,8 @@ export function Footer() {
 
           <FooterCol title="Follow us" links={[
             // TODO: replace with your real handles before going live
-            { href: "https://twitter.com/tonpad", label: "Twitter / X", external: true },
-            { href: "https://t.me/tonpad", label: "Telegram", external: true },
+            { href: "https://x.com/TonPad_org, label: "Twitter / X", external: true },
+            { href: "https://t.me/TonPad_org", label: "Telegram", external: true },
           ]} />
         </div>
 
