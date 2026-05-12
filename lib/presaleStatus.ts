@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { PresaleInfo, PresaleStatus } from "./types";
 
 export function derivePresaleStatus(presale: PresaleInfo, nowMs = Date.now()): PresaleStatus {
-  if (presale.status === "succeeded") return "succeeded";
-  if (presale.status === "failed") return "failed";
   if (presale.status === "finalized") return "finalized";
 
   const start = new Date(presale.startTime).getTime();
@@ -19,8 +17,8 @@ export function useEffectivePresale(presale: PresaleInfo, intervalMs = 1_000): P
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const id = globalThis.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => globalThis.clearInterval(id);
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(id);
   }, [intervalMs]);
 
   return useMemo(

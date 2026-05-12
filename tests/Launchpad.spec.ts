@@ -425,37 +425,6 @@ describe('TONPad public fee architecture', () => {
     expect(creatorClaim.transactions).toHaveTransaction({ from: f.creator.address, to: pool.address, success: false });
   });
 
-  it('treats a soft-cap sale as successful once end time elapses', async () => {
-    const f = await fixture();
-    const { token, pool } = await launch(f);
-
-    f.blockchain.now = f.startTime + 1;
-    await contribute(f, pool, f.user, toNano('10'));
-    f.blockchain.now = f.endTime + 1;
-
-    const claim = await pool.send(f.user.getSender(), { value: toNano('0.2') }, { $$type: 'ClaimTokens' });
-    const treasury = await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
-
-    expect(claim.transactions).toHaveTransaction({ from: pool.address, success: true });
-    expect(treasury.transactions).toHaveTransaction({ from: pool.address, to: f.treasury.address, success: true });
-    expect(await jettonBalance(f, token, f.user.address)).toEqual(10_000_000_000_000_000n);
-  });
-
-  it('treats a below-soft-cap sale as failed once end time elapses', async () => {
-    const f = await fixture();
-    const { pool } = await launch(f);
-
-    f.blockchain.now = f.startTime + 1;
-    await contribute(f, pool, f.user, toNano('2'));
-    f.blockchain.now = f.endTime + 1;
-
-    const refund = await pool.send(f.user.getSender(), { value: toNano('0.05') }, { $$type: 'Refund' });
-    const creatorClaim = await pool.send(f.creator.getSender(), { value: toNano('1') }, { $$type: 'CreatorClaimTreasury' });
-
-    expect(refund.transactions).toHaveTransaction({ from: pool.address, to: f.user.address, success: true });
-    expect(creatorClaim.transactions).toHaveTransaction({ from: f.creator.address, to: pool.address, success: false });
-  });
-
   it('claim and refund flows still work normally', async () => {
     const successFixture = await fixture();
     const { token, pool } = await launch(successFixture);

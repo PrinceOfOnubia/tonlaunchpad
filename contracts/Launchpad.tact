@@ -772,10 +772,6 @@ contract PresalePool with Deployable {
     get fun getClaimed(user: Address): Bool {
         return self.storedClaimed(user);
     }
-
-    get fun getFactoryOwner(): Address {
-        return self.factoryOwner;
-    }
 }
 
 contract LaunchpadFactory with Deployable {
