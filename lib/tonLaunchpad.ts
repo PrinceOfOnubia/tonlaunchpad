@@ -1,5 +1,6 @@
 import { Address, beginCell, toNano } from "@ton/core";
 import { storeLaunchToken, type LaunchToken } from "@/build/Launchpad/Launchpad_LaunchpadFactory";
+import { getCachedFactoryAddress } from "./runtimeConfig";
 import type { CreateTokenPayload } from "./types";
 
 export interface LaunchTransaction {
@@ -22,9 +23,10 @@ export function getTonConnectValidUntil() {
 export function buildLaunchTokenTransaction(
   form: CreateTokenPayload,
   creatorWallet: string,
+  factoryAddressOverride?: string | null,
 ): LaunchTransaction {
   const factoryAddress = requiredAddress(
-    process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
+    factoryAddressOverride ?? getCachedFactoryAddress(),
     "NEXT_PUBLIC_FACTORY_ADDRESS",
   );
   const creatorAddress = requiredAddress(creatorWallet, "connected wallet address");
@@ -87,10 +89,13 @@ export function buildCreatorClaimTreasuryTransaction(poolAddress: string): Launc
   };
 }
 
-export function getLaunchValidationError(form: CreateTokenPayload): string | null {
+export function getLaunchValidationError(
+  form: CreateTokenPayload,
+  factoryAddressOverride?: string | null,
+): string | null {
   try {
     normalizeLaunchConfig(form);
-    requiredAddress(process.env.NEXT_PUBLIC_FACTORY_ADDRESS, "NEXT_PUBLIC_FACTORY_ADDRESS");
+    requiredAddress(factoryAddressOverride ?? getCachedFactoryAddress(), "NEXT_PUBLIC_FACTORY_ADDRESS");
     return null;
   } catch (err) {
     return errorMessage(err);
@@ -210,7 +215,7 @@ function buildOffchainMetadataCell(url: string) {
   return beginCell().storeUint(1, 8).storeStringTail(url).endCell();
 }
 
-function requiredAddress(value: string | undefined, label: string): Address {
+function requiredAddress(value: string | null | undefined, label: string): Address {
   if (!value?.trim()) throw new Error(`${label} is not configured.`);
   try {
     return Address.parse(value);

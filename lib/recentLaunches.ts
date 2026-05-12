@@ -3,6 +3,7 @@ import type { Paginated, Token, TokenListParams, Transaction, UserPortfolio } fr
 import { DEFAULT_TOKEN_IMAGE_URL } from "./tonLaunchpad";
 import { derivePresaleStatus } from "./presaleStatus";
 import { computeAllocationBreakdown } from "./allocationMath";
+import { getCachedFactoryAddress } from "./runtimeConfig";
 
 export const RECENT_LAUNCHES_KEY = "tonpad_recent_launches";
 
@@ -35,7 +36,7 @@ export function getRecentLaunches(): RecentLaunch[] {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     const launches = parsed.map(normalizeRecentLaunch).filter(Boolean) as RecentLaunch[];
-    const currentFactory = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
+    const currentFactory = getCachedFactoryAddress();
     if (!currentFactory) return launches;
     return launches.filter((launch) => !launch.factoryAddress || sameAddress(launch.factoryAddress, currentFactory));
   } catch {

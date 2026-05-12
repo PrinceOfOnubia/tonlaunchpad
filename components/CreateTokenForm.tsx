@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useState, useMemo, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 import {
@@ -33,6 +33,7 @@ import {
 } from "@/lib/tonLaunchpad";
 import { tonviewerAddressUrl } from "@/lib/explorer";
 import { saveRecentLaunch, tokenFromLaunchInput } from "@/lib/recentLaunches";
+import { loadRuntimeConfig } from "@/lib/runtimeConfig";
 import { TokenPreview } from "./TokenPreview";
 
 type Step = 0 | 1 | 2 | 3;
@@ -311,6 +312,19 @@ export function CreateTokenForm() {
   const [metadataNotice, setMetadataNotice] = useState<string | null>(null);
   const [deployedId, setDeployedId] = useState<string | null>(null);
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
+  const [runtimeFactoryAddress, setRuntimeFactoryAddress] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void loadRuntimeConfig().then((config) => {
+      if (active) {
+        setRuntimeFactoryAddress(config.factoryAddress);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // ---------------------------------------------------------------------
   // Validation per step
@@ -435,7 +449,9 @@ export function CreateTokenForm() {
         creator: wallet,
       };
 
-      const launchError = getLaunchValidationError(payload);
+      const runtimeConfig = await loadRuntimeConfig();
+      const factoryAddress = runtimeConfig.factoryAddress;
+      const launchError = getLaunchValidationError(payload, factoryAddress);
       if (launchError) {
         setError(launchError);
         setDeployStatus(null);
@@ -444,12 +460,12 @@ export function CreateTokenForm() {
 
       let transaction;
       try {
-        transaction = buildLaunchTokenTransaction(payload, wallet);
+        transaction = buildLaunchTokenTransaction(payload, wallet, factoryAddress);
       } catch (err) {
         console.error("Launch payload build failed", {
           error: err,
           metadataUrl,
-          factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
+          factoryAddress,
           wallet,
           payload,
         });
@@ -464,7 +480,7 @@ export function CreateTokenForm() {
 
       console.debug("[launch] sendTransaction payload", {
         metadataUrl,
-        factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
+        factoryAddress,
         to: transaction.to,
         amountNano: transaction.amountNano,
         payloadPresent: !!transaction.payload,
@@ -489,7 +505,7 @@ export function CreateTokenForm() {
         console.error("Launch sendTransaction failed", {
           error: err,
           metadataUrl,
-          factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
+          factoryAddress,
           to: transaction.to,
           amountNano: transaction.amountNano,
           validUntil: transaction.validUntil,
@@ -503,11 +519,11 @@ export function CreateTokenForm() {
       console.debug("Launch transaction result BOC", result.boc);
       let launchId = `recent-${Date.now().toString(36)}`;
       const createdAt = new Date().toISOString();
-      const factoryAddress = process.env.NEXT_PUBLIC_FACTORY_ADDRESS;
+      const persistedFactoryAddress = factoryAddress ?? undefined;
       let token = tokenFromLaunchInput({
         id: launchId,
         form: payload,
-        factoryAddress,
+        factoryAddress: persistedFactoryAddress,
         createdAt,
       });
       saveRecentLaunch({
@@ -515,7 +531,7 @@ export function CreateTokenForm() {
         name: token.name,
         symbol: token.symbol,
         transactionBoc: result.boc,
-        factoryAddress,
+        factoryAddress: persistedFactoryAddress,
         creator: wallet,
         createdAt,
         poolAddress: null,
@@ -527,7 +543,7 @@ export function CreateTokenForm() {
         const savedToken = await api.tokens.create({
           ...payload,
           transactionBoc: result.boc,
-          factoryAddress,
+          factoryAddress: persistedFactoryAddress,
           tokenMasterAddress: null,
           presalePoolAddress: null,
         });
@@ -538,7 +554,7 @@ export function CreateTokenForm() {
           name: token.name,
           symbol: token.symbol,
           transactionBoc: result.boc,
-          factoryAddress,
+          factoryAddress: persistedFactoryAddress,
           creator: wallet,
           createdAt,
           poolAddress: token.presalePoolAddress ?? null,
@@ -550,7 +566,7 @@ export function CreateTokenForm() {
         setMetadataNotice("Launch submitted successfully. Your presale page will appear shortly.");
       }
 
-      setExplorerUrl(tonviewerAddressUrl(factoryAddress ?? wallet));
+      setExplorerUrl(tonviewerAddressUrl(persistedFactoryAddress ?? wallet));
       setDeployedId(launchId);
       setDeployStatus("Launch transaction submitted.");
     } catch (err) {
@@ -688,12 +704,16 @@ export function CreateTokenForm() {
               <button
                 type="button"
                 onClick={handleDeploy}
-                disabled={!validation.allValid || submitting}
+                disabled={!validation.allValid || submitting || !runtimeFactoryAddress}
                 className="btn-primary"
               >
                 {submitting ? (
                   <>
                     <Loader2 size={16} className="animate-spin" /> Deploying…
+                  </>
+                ) : !runtimeFactoryAddress ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Loading config…
                   </>
                 ) : !wallet ? (
                   <>
