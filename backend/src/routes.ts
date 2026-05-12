@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { config } from "./config";
 import { prisma } from "./db";
-import { reconcileFactoryLaunches } from "./indexer";
+import { readOnChainLaunchCount, reconcileFactoryLaunches } from "./indexer";
 import { computeStatus, launchToToken, txToApi } from "./mappers";
 import { createLaunchSchema, listQuerySchema, tonAddressSchema } from "./validation";
 import { addressVariants, canonicalAddress } from "./address";
@@ -35,7 +35,7 @@ const reroute = (req: Request, res: Response, next: NextFunction, url: string) =
 };
 
 router.get("/health", async (_req, res) => {
-  const [launchCount, unresolvedLaunches] = await Promise.all([
+  const [launchCount, unresolvedLaunches, onChainLaunchCount] = await Promise.all([
     safeDb(() => prisma.launch.count({ where: currentFactoryLaunchWhere() }), 0),
     safeDb(
       () =>
@@ -51,6 +51,7 @@ router.get("/health", async (_req, res) => {
         }),
       0,
     ),
+    safeAsync(() => readOnChainLaunchCount(), null),
   ]);
   res.json({
     ok: true,
@@ -61,6 +62,7 @@ router.get("/health", async (_req, res) => {
     indexerFastPollLimit: config.indexerFastPollLimit,
     indexerFullPollLimit: config.indexerFullPollLimit,
     indexerRefreshLimit: config.indexerRefreshLimit,
+    onChainLaunchCount,
     currentFactoryLaunchCount: launchCount,
     unresolvedCurrentFactoryLaunches: unresolvedLaunches,
   });
@@ -1108,6 +1110,15 @@ async function safeDb<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
     return await operation();
   } catch (err) {
     console.error("[api] database unavailable", err);
+    return fallback;
+  }
+}
+
+async function safeAsync<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await operation();
+  } catch (err) {
+    console.error("[api] async operation failed", err);
     return fallback;
   }
 }

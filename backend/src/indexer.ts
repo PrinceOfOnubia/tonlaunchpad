@@ -38,6 +38,17 @@ export async function reconcileFactoryLaunches(options: { mode?: ReconcileMode }
   });
 }
 
+export async function readOnChainLaunchCount() {
+  if (!config.factoryAddress) return 0;
+  const client = new TonClient({
+    endpoint: config.toncenterEndpoint,
+    apiKey: config.toncenterApiKey || undefined,
+  });
+  const factory = Address.parse(config.factoryAddress);
+  const countResult = await client.runMethod(factory, "getLaunchCount");
+  return Number(countResult.stack.readBigNumber());
+}
+
 class TonpadIndexer {
   private running = false;
   private client = new TonClient({
@@ -130,21 +141,22 @@ class TonpadIndexer {
           continue;
         }
 
-        const created = mode === "full"
-          ? await this.createHydratedLaunch({
-              index: i,
-              discoveredAt,
-              tokenMasterAddress,
-              presalePoolAddress,
-              creatorWallet,
-            })
-          : await this.createPlaceholderLaunch({
-              index: i,
-              discoveredAt,
-              tokenMasterAddress,
-              presalePoolAddress,
-              creatorWallet,
-            });
+        const created =
+          mode === "full"
+            ? await this.createLaunchWithHydrationFallback({
+                index: i,
+                discoveredAt,
+                tokenMasterAddress,
+                presalePoolAddress,
+                creatorWallet,
+              })
+            : await this.createPlaceholderLaunch({
+                index: i,
+                discoveredAt,
+                tokenMasterAddress,
+                presalePoolAddress,
+                creatorWallet,
+              });
         console.log("[indexer] discovered launch", {
           id: created.id,
           presalePoolAddress,
@@ -327,6 +339,26 @@ class TonpadIndexer {
         lastIndexedAt: args.discoveredAt,
       },
     });
+  }
+
+  private async createLaunchWithHydrationFallback(args: {
+    index: number;
+    discoveredAt: Date;
+    tokenMasterAddress: string;
+    presalePoolAddress: string;
+    creatorWallet: string;
+  }) {
+    try {
+      return await this.createHydratedLaunch(args);
+    } catch (err) {
+      console.warn("[indexer] launch hydration failed during discovery; creating placeholder", {
+        index: args.index,
+        presalePoolAddress: args.presalePoolAddress,
+        tokenMasterAddress: args.tokenMasterAddress,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return this.createPlaceholderLaunch(args);
+    }
   }
 
   private async hydrateLaunch(
