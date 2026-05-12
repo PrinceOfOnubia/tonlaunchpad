@@ -52,23 +52,59 @@ console.log(`[api] CORS origin=${config.frontendOrigin}`);
 console.log(`[api] DATABASE_URL configured=${config.databaseUrl ? "yes" : "no"}`);
 
 async function verifyDatabase() {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    console.log("[api] database connection success");
-  } catch (err) {
-    console.error("[api] database connection failed", err);
+  await prisma.$queryRaw`SELECT 1`;
+  console.log("[api] database connection success");
+  await verifyLaunchSchema();
+}
+
+async function verifyLaunchSchema() {
+  const requiredColumns = [
+    "burnedTokens",
+    "presaleTokens",
+    "liquidityTokens",
+    "creatorTokens",
+    "presaleTON",
+    "liquidityTON",
+    "platformFeeTON",
+    "creatorTON",
+  ];
+
+  const rows = await prisma.$queryRaw<Array<{ column_name: string }>>`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'Launch'
+  `;
+
+  const present = new Set(rows.map((row) => row.column_name));
+  const missing = requiredColumns.filter((column) => !present.has(column));
+
+  if (missing.length > 0) {
+    console.error("[api] launch schema mismatch detected", {
+      missingColumns: missing,
+      hint: "Run npm run backend:prisma:migrate before starting the backend.",
+    });
+    throw new Error(`Launch table missing required columns: ${missing.join(", ")}`);
   }
+
+  console.log("[api] launch schema verified");
 }
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`[api] Backend running on ${config.host}:${config.port}`);
-  void verifyDatabase();
+  void bootstrap();
+});
+
+async function bootstrap() {
   try {
+    await verifyDatabase();
     startIndexer();
   } catch (err) {
-    console.error("[api] indexer startup failed", err);
+    console.error("[api] backend bootstrap failed", err);
+    server.close();
+    await prisma.$disconnect();
+    process.exit(1);
   }
-});
+}
 
 async function shutdown() {
   server.close();
