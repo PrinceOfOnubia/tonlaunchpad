@@ -24,7 +24,7 @@ export function computeStatus(
 }
 
 export function launchToToken(launch: Launch) {
-  const allocationBreakdown = computeAllocationBreakdown({
+  const computedBreakdown = computeAllocationBreakdown({
     totalSupply: launch.totalSupply,
     presalePercent: launch.presaleAllocation,
     liquidityPercentTokens: launch.liquidityAllocation,
@@ -36,6 +36,19 @@ export function launchToToken(launch: Launch) {
     liquidityTreasurySet: !!launch.liquidityTreasury,
     burnedTokens: launch.burnedTokens ?? 0,
   });
+  const allocationBreakdown = {
+    presaleTON: launch.presaleTON ?? computedBreakdown.presaleTON,
+    liquidityTON: launch.liquidityTON ?? computedBreakdown.liquidityTON,
+    platformFeeTON: launch.platformFeeTON ?? computedBreakdown.platformFeeTON,
+    creatorTON: launch.creatorTON ?? computedBreakdown.creatorTON,
+    presaleTokens: launch.presaleTokens ?? computedBreakdown.presaleTokens,
+    liquidityTokens: launch.liquidityTokens ?? computedBreakdown.liquidityTokens,
+    creatorTokens: launch.creatorTokens ?? computedBreakdown.creatorTokens,
+    presaleTokenFee: computedBreakdown.presaleTokenFee,
+    burnedTokens: launch.burnedTokens ?? computedBreakdown.burnedTokens,
+    liquidityReceiver:
+      launch.liquidityPercent > 0 && launch.liquidityTreasury ? "liquidity" : "creator",
+  } as const;
 
   return {
     id: launch.id,
@@ -46,7 +59,7 @@ export function launchToToken(launch: Launch) {
     txHash: launch.txHash,
     tokenName: launch.tokenName,
     name: launch.tokenName,
-    symbol: launch.symbol,
+    symbol: launch.symbol.toUpperCase(),
     description: launch.description,
     imageUrl: launch.logoUrl,
     metadataUrl: launch.metadataUrl,

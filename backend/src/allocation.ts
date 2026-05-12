@@ -11,6 +11,17 @@ export interface AllocationBreakdown {
   liquidityReceiver: "creator" | "liquidity";
 }
 
+export interface PersistedAllocationFields {
+  presaleTokens: number;
+  liquidityTokens: number;
+  creatorTokens: number;
+  presaleTON: number;
+  liquidityTON: number;
+  platformFeeTON: number;
+  creatorTON: number;
+  burnedTokens: number;
+}
+
 export interface AllocationInputs {
   totalSupply: number;
   presalePercent: number;
@@ -52,6 +63,26 @@ export function computeAllocationBreakdown(input: AllocationInputs): AllocationB
     burnedTokens,
     liquidityReceiver:
       input.liquidityPercentOfRaised > 0 && input.liquidityTreasurySet ? "liquidity" : "creator",
+  };
+}
+
+export function computeTONAllocation(input: AllocationInputs): AllocationBreakdown {
+  return computeAllocationBreakdown(input);
+}
+
+export function buildPersistedAllocationFields(
+  input: AllocationInputs,
+): PersistedAllocationFields {
+  const breakdown = computeAllocationBreakdown(input);
+  return {
+    presaleTokens: breakdown.presaleTokens,
+    liquidityTokens: breakdown.liquidityTokens,
+    creatorTokens: breakdown.creatorTokens,
+    presaleTON: breakdown.presaleTON,
+    liquidityTON: breakdown.liquidityTON,
+    platformFeeTON: breakdown.platformFeeTON,
+    creatorTON: breakdown.creatorTON,
+    burnedTokens: breakdown.burnedTokens,
   };
 }
 

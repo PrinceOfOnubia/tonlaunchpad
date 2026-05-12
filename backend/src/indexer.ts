@@ -5,6 +5,7 @@ import { config } from "./config";
 import { prisma } from "./db";
 import { computeStatus } from "./mappers";
 import { addressVariants } from "./address";
+import { buildPersistedAllocationFields } from "./allocation";
 
 const NANO = 1_000_000_000;
 const REFRESH_STALE_MS = 20_000;
@@ -304,6 +305,13 @@ class TonpadIndexer {
         presaleAllocation: snapshot.presaleAllocation,
         liquidityAllocation: snapshot.liquidityAllocation,
         creatorAllocation: snapshot.creatorAllocation,
+        presaleTokens: snapshot.presaleTokens,
+        liquidityTokens: snapshot.liquidityTokens,
+        creatorTokens: snapshot.creatorTokens,
+        presaleTON: snapshot.presaleTON,
+        liquidityTON: snapshot.liquidityTON,
+        platformFeeTON: snapshot.platformFeeTON,
+        creatorTON: snapshot.creatorTON,
         platformTonTreasury: snapshot.platformTonTreasury,
         platformTokenTreasury: snapshot.platformTokenTreasury,
         liquidityTreasury: snapshot.liquidityTreasury,
@@ -352,6 +360,13 @@ class TonpadIndexer {
         presaleAllocation: snapshot.presaleAllocation,
         liquidityAllocation: snapshot.liquidityAllocation,
         creatorAllocation: snapshot.creatorAllocation,
+        presaleTokens: snapshot.presaleTokens,
+        liquidityTokens: snapshot.liquidityTokens,
+        creatorTokens: snapshot.creatorTokens,
+        presaleTON: snapshot.presaleTON,
+        liquidityTON: snapshot.liquidityTON,
+        platformFeeTON: snapshot.platformFeeTON,
+        creatorTON: snapshot.creatorTON,
         platformTonTreasury: snapshot.platformTonTreasury,
         platformTokenTreasury: snapshot.platformTokenTreasury,
         liquidityTreasury: snapshot.liquidityTreasury,
@@ -502,6 +517,18 @@ class TonpadIndexer {
             hardCap,
             status: failed ? "failed" : "upcoming",
           });
+    const allocationFields = buildPersistedAllocationFields({
+      totalSupply,
+      presalePercent: presaleAllocation,
+      liquidityPercentTokens: liquidityAllocation,
+      creatorPercent: creatorAllocation,
+      totalRaisedTon: totalRaised,
+      liquidityPercentOfRaised,
+      platformTonFeeBps,
+      platformTokenFeeBps,
+      liquidityTreasurySet,
+      burnedTokens: fromTokenUnits(burnedTokensRaw, decimals),
+    });
 
     return {
       factoryAddress: poolFactory,
@@ -529,6 +556,13 @@ class TonpadIndexer {
       presaleAllocation,
       liquidityAllocation,
       creatorAllocation,
+      presaleTokens: allocationFields.presaleTokens,
+      liquidityTokens: allocationFields.liquidityTokens,
+      creatorTokens: allocationFields.creatorTokens,
+      presaleTON: allocationFields.presaleTON,
+      liquidityTON: allocationFields.liquidityTON,
+      platformFeeTON: allocationFields.platformFeeTON,
+      creatorTON: allocationFields.creatorTON,
       platformTonTreasury,
       platformTokenTreasury,
       liquidityTreasury: liquidityTreasurySet ? liquidityTreasury : null,

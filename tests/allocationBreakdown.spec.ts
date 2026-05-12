@@ -1,5 +1,9 @@
 import { computeAllocationBreakdown as computeFrontendBreakdown } from "../lib/allocationMath";
-import { computeAllocationBreakdown as computeBackendBreakdown } from "../backend/src/allocation";
+import {
+  buildPersistedAllocationFields,
+  computeAllocationBreakdown as computeBackendBreakdown,
+  computeTONAllocation,
+} from "../backend/src/allocation";
 
 describe("allocation breakdown", () => {
   const input = {
@@ -63,5 +67,44 @@ describe("allocation breakdown", () => {
 
     expect(breakdown.presaleTokens).toBe(400_000_000);
     expect(breakdown.burnedTokens).toBe(90_000_000);
+  });
+
+  it("exposes the same TON allocation shape through the backend helper", () => {
+    const breakdown = computeTONAllocation({
+      ...input,
+      liquidityTreasurySet: true,
+      burnedTokens: 25_000_000,
+    });
+
+    expect(breakdown).toMatchObject({
+      presaleTON: 100,
+      liquidityTON: 70,
+      platformFeeTON: 5,
+      creatorTON: 25,
+      presaleTokens: 465_000_000,
+      liquidityTokens: 300_000_000,
+      creatorTokens: 200_000_000,
+      presaleTokenFee: 10_000_000,
+      burnedTokens: 25_000_000,
+      liquidityReceiver: "liquidity",
+    });
+  });
+
+  it("builds persisted allocation fields for database writes", () => {
+    const persisted = buildPersistedAllocationFields({
+      ...input,
+      burnedTokens: 90_000_000,
+    });
+
+    expect(persisted).toEqual({
+      presaleTokens: 400_000_000,
+      liquidityTokens: 300_000_000,
+      creatorTokens: 200_000_000,
+      presaleTON: 100,
+      liquidityTON: 70,
+      platformFeeTON: 5,
+      creatorTON: 25,
+      burnedTokens: 90_000_000,
+    });
   });
 });

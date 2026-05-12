@@ -10,6 +10,7 @@ import { reconcileFactoryLaunches } from "./indexer";
 import { computeStatus, launchToToken, txToApi } from "./mappers";
 import { createLaunchSchema, listQuerySchema, tonAddressSchema } from "./validation";
 import { addressVariants, canonicalAddress } from "./address";
+import { buildPersistedAllocationFields } from "./allocation";
 
 export const router = Router();
 const CONTRIBUTE_OPCODE = 443500403;
@@ -310,6 +311,18 @@ router.post("/api/launches", async (req, res, next) => {
     const platformTokenFeeTonTreasuryShare = platformTokenFeeAmount / 2;
     const platformTokenFeeTokenTreasuryShare =
       platformTokenFeeAmount - platformTokenFeeTonTreasuryShare;
+    const allocationFields = buildPersistedAllocationFields({
+      totalSupply: body.totalSupply,
+      presalePercent: body.allocations.presale,
+      liquidityPercentTokens: body.allocations.liquidity,
+      creatorPercent: body.allocations.creator,
+      totalRaisedTon: 0,
+      liquidityPercentOfRaised: body.liquidityPercent,
+      platformTonFeeBps,
+      platformTokenFeeBps,
+      liquidityTreasurySet: !!liquidityTreasury,
+      burnedTokens: 0,
+    });
     const status = computeStatus({
       startTime: body.presale.startTime,
       endTime: body.presale.endTime,
@@ -346,6 +359,13 @@ router.post("/api/launches", async (req, res, next) => {
         presaleAllocation: body.allocations.presale,
         liquidityAllocation: body.allocations.liquidity,
         creatorAllocation: body.allocations.creator,
+        presaleTokens: allocationFields.presaleTokens,
+        liquidityTokens: allocationFields.liquidityTokens,
+        creatorTokens: allocationFields.creatorTokens,
+        presaleTON: allocationFields.presaleTON,
+        liquidityTON: allocationFields.liquidityTON,
+        platformFeeTON: allocationFields.platformFeeTON,
+        creatorTON: allocationFields.creatorTON,
         platformTonTreasury,
         platformTokenTreasury,
         liquidityTreasury,
@@ -367,6 +387,24 @@ router.post("/api/launches", async (req, res, next) => {
           tokenMasterAddress && presalePoolAddress ? false : undefined,
         status,
         factoryAddress,
+        totalSupply: body.totalSupply,
+        decimals: body.decimals,
+        presaleRate: body.presale.rate,
+        softCap: body.presale.softCap,
+        hardCap: body.presale.hardCap,
+        liquidityPercent: body.liquidityPercent,
+        startTime: body.presale.startTime,
+        endTime: body.presale.endTime,
+        presaleAllocation: body.allocations.presale,
+        liquidityAllocation: body.allocations.liquidity,
+        creatorAllocation: body.allocations.creator,
+        presaleTokens: allocationFields.presaleTokens,
+        liquidityTokens: allocationFields.liquidityTokens,
+        creatorTokens: allocationFields.creatorTokens,
+        presaleTON: allocationFields.presaleTON,
+        liquidityTON: allocationFields.liquidityTON,
+        platformFeeTON: allocationFields.platformFeeTON,
+        creatorTON: allocationFields.creatorTON,
         platformTonTreasury: platformTonTreasury ?? undefined,
         platformTokenTreasury: platformTokenTreasury ?? undefined,
         liquidityTreasury: liquidityTreasury ?? undefined,
