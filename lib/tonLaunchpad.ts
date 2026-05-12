@@ -11,7 +11,6 @@ export interface LaunchTransaction {
 }
 
 const CONTRIBUTE_OPCODE = 443500403;
-const CREATOR_CLAIM_TREASURY_OPCODE = 1459145241;
 const LAUNCH_VALUE_TON = "1";
 export const DEFAULT_TOKEN_IMAGE_URL = "https://tonpad.org/icon.png";
 export const DEFAULT_TOKEN_METADATA_URL = "https://tonpad.org/default-token-metadata.json";
@@ -73,17 +72,6 @@ export function buildContributeTransaction(poolAddress: string, amountTon: numbe
   return {
     to: pool.toString(),
     amountNano: toNano(amountTon.toString()).toString(),
-    payload: bytesToBase64(body.toBoc()),
-    validUntil: getTonConnectValidUntil(),
-  };
-}
-
-export function buildCreatorClaimTreasuryTransaction(poolAddress: string): LaunchTransaction {
-  const pool = requiredAddress(poolAddress, "presale pool address");
-  const body = beginCell().storeUint(CREATOR_CLAIM_TREASURY_OPCODE, 32).endCell();
-  return {
-    to: pool.toString(),
-    amountNano: toNano("1").toString(),
     payload: bytesToBase64(body.toBoc()),
     validUntil: getTonConnectValidUntil(),
   };

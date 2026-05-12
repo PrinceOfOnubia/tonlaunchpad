@@ -589,7 +589,10 @@ export function PresalePanel({ token }: Props) {
       )}
 
       {presale.status === "finalized" && (
-        <InfoBox>Presale finalized. The creator handles liquidity manually off-platform.</InfoBox>
+        <InfoBox>
+          Presale finalized. TON payouts route automatically on close, and the creator handles
+          liquidity manually off-platform.
+        </InfoBox>
       )}
 
       {error && (

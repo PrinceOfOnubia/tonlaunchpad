@@ -7,7 +7,7 @@ import { Footer } from "@/components/Footer";
 export const metadata: Metadata = {
   title: "TonPad — Launch tokens on TON",
   description:
-    "Fair and transparent TON presales with simple on-chain claims, refunds, and creator treasury release.",
+    "Fair and transparent TON presales with simple on-chain claims, refunds, and automatic TON payout routing.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "https://tonpad.org",
   ),
