@@ -104,16 +104,10 @@ class TonpadIndexer {
         const creatorWallet = result.stack.readAddress().toString();
         const discoveredAt = new Date();
 
-        const existing = await prisma.launch.findFirst({
-          where: {
-            factoryAddress: { in: addressVariants(config.factoryAddress) },
-            OR: [
-              { presalePoolAddress: { in: addressVariants(presalePoolAddress) } },
-              { tokenMasterAddress: { in: addressVariants(tokenMasterAddress) } },
-              { creatorWallet: { in: addressVariants(creatorWallet) }, pendingIndexing: true },
-            ],
-          },
-          orderBy: { createdAt: "desc" },
+        const existing = await this.findLaunchReconciliationCandidate({
+          creatorWallet,
+          presalePoolAddress,
+          tokenMasterAddress,
         });
 
         if (existing) {
@@ -172,6 +166,51 @@ class TonpadIndexer {
         }
       }
     }
+  }
+
+  private async findLaunchReconciliationCandidate(args: {
+    creatorWallet: string;
+    presalePoolAddress: string;
+    tokenMasterAddress: string;
+  }) {
+    const exactCurrentFactory = await prisma.launch.findFirst({
+      where: {
+        factoryAddress: { in: addressVariants(config.factoryAddress) },
+        OR: [
+          { presalePoolAddress: { in: addressVariants(args.presalePoolAddress) } },
+          { tokenMasterAddress: { in: addressVariants(args.tokenMasterAddress) } },
+          { creatorWallet: { in: addressVariants(args.creatorWallet) }, pendingIndexing: true },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (exactCurrentFactory) {
+      return exactCurrentFactory;
+    }
+
+    const fallbackPending = await prisma.launch.findFirst({
+      where: {
+        creatorWallet: { in: addressVariants(args.creatorWallet) },
+        OR: [
+          { pendingIndexing: true },
+          { tokenMasterAddress: null },
+          { presalePoolAddress: null },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (fallbackPending) {
+      console.warn("[indexer] adopting unresolved launch from mismatched factory", {
+        launchId: fallbackPending.id,
+        previousFactoryAddress: fallbackPending.factoryAddress,
+        currentFactoryAddress: config.factoryAddress,
+        creatorWallet: args.creatorWallet,
+      });
+      return fallbackPending;
+    }
+
+    return null;
   }
 
   async refreshLaunches(options: { maxLaunches?: number; includeHolders?: boolean } = {}) {
