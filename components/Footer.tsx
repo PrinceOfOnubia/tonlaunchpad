@@ -22,8 +22,8 @@ export function Footer() {
 
           <FooterCol title="Follow us" links={[
             // TODO: replace with your real handles before going live
-            { href: "https://x.com/TonPad", label: "Twitter / X", external: true },
-            { href: "https://t.me/TonPad", label: "Telegram", external: true },
+            { href: "https://x.com/TonPad_org", label: "Twitter / X", external: true },
+            { href: "https://t.me/TonPad_org", label: "Telegram", external: true },
           ]} />
         </div>
 
