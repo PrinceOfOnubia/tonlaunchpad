@@ -3,7 +3,7 @@ import cors from "cors";
 import { ZodError } from "zod";
 import { config } from "./config";
 import { router } from "./routes";
-import { startIndexer } from "./indexer";
+import { reconcileFactoryLaunches, startIndexer } from "./indexer";
 import { prisma } from "./db";
 
 const app = express();
@@ -98,11 +98,27 @@ async function bootstrap() {
   try {
     await verifyDatabase();
     startIndexer();
+    setTimeout(() => {
+      void startWarmReconcile("startup+5s");
+    }, 5_000).unref();
+    setTimeout(() => {
+      void startWarmReconcile("startup+20s");
+    }, 20_000).unref();
   } catch (err) {
     console.error("[api] backend bootstrap failed", err);
     server.close();
     await prisma.$disconnect();
     process.exit(1);
+  }
+}
+
+async function startWarmReconcile(reason: string) {
+  try {
+    console.log("[api] warm reconciliation start", { reason });
+    await reconcileFactoryLaunches({ mode: "full" });
+    console.log("[api] warm reconciliation complete", { reason });
+  } catch (err) {
+    console.warn("[api] warm reconciliation failed", { reason, err });
   }
 }
 

@@ -334,8 +334,13 @@ router.post("/api/launches", async (req, res, next) => {
       status: "upcoming",
     });
 
+    const launchTxRef =
+      body.txHash ??
+      body.transactionBoc ??
+      `frontend-${factoryAddress}-${creatorWallet}-${body.symbol}-${body.presale.startTime.toISOString()}`;
+
     const launch = await prisma.launch.upsert({
-      where: { txHash: body.txHash ?? `frontend-${Date.now()}-${body.symbol}` },
+      where: { txHash: launchTxRef },
       create: {
         tokenName: body.name,
         symbol: body.symbol.toUpperCase(),
@@ -346,7 +351,7 @@ router.post("/api/launches", async (req, res, next) => {
         factoryAddress,
         tokenMasterAddress,
         presalePoolAddress,
-        txHash: body.txHash,
+        txHash: launchTxRef,
         softCap: body.presale.softCap,
         hardCap: body.presale.hardCap,
         liquidityPercent: body.liquidityPercent,
@@ -380,6 +385,7 @@ router.post("/api/launches", async (req, res, next) => {
         pendingIndexing: !(tokenMasterAddress && presalePoolAddress),
       },
       update: {
+        txHash: launchTxRef,
         logoUrl: body.logoUrl ?? body.imageUrl ?? undefined,
         metadataUrl: body.metadataUrl ?? undefined,
         creatorWallet,
@@ -434,11 +440,7 @@ router.post("/api/launches", async (req, res, next) => {
         .catch((err) => console.warn("[api] async launch reconciliation failed", err));
     }
 
-    const launchTxHash =
-      body.txHash ??
-      body.transactionBoc ??
-      launch.txHash ??
-      `launch-${launch.id}-${creatorWallet}`;
+    const launchTxHash = launch.txHash ?? `launch-${launch.id}-${creatorWallet}`;
 
     if (launchTxHash) {
       await prisma.transaction.upsert({
@@ -993,7 +995,7 @@ function findLaunchByIdOrAddress(id: string) {
 }
 
 async function ensureFactoryLaunchBootstrap(reason: string) {
-  const [launchCount, unresolvedLaunchCount] = await Promise.all([
+  const [launchCount, unresolvedLaunchCount, onChainLaunchCount] = await Promise.all([
     safeDb(() => prisma.launch.count({ where: currentFactoryLaunchWhere() }), 0),
     safeDb(
       () =>
@@ -1009,17 +1011,24 @@ async function ensureFactoryLaunchBootstrap(reason: string) {
         }),
       0,
     ),
+    safeAsync(() => readOnChainLaunchCount(), 0),
   ]);
+  const launchLag = Math.max(onChainLaunchCount - launchCount, 0);
   console.log("[api] bootstrap check", {
     reason,
     factoryAddress: config.factoryAddress,
     launchCount,
     unresolvedLaunchCount,
+    onChainLaunchCount,
+    launchLag,
   });
-  if (launchCount > 0 && unresolvedLaunchCount === 0) return;
+  if (launchCount > 0 && unresolvedLaunchCount === 0 && launchLag === 0) return;
   try {
     await reconcileFactoryLaunches({
-      mode: launchCount === 0 || unresolvedLaunchCount > 0 ? "full" : "fast",
+      mode:
+        launchCount === 0 || unresolvedLaunchCount > 0 || launchLag > 0
+          ? "full"
+          : "fast",
     });
   } catch (err) {
     console.warn(reason, err);
