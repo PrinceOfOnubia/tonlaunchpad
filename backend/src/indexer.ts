@@ -468,7 +468,7 @@ class TonpadIndexer {
     const liquidityTonAmount = fromNano(stateStack.readBigNumber());
     const creatorTreasuryAmount = fromNano(stateStack.readBigNumber());
     stateStack.readBoolean(); // tokenFeesRouted
-    const burnedTokensRaw = stateStack.readBigNumber();
+    const burnedTokensRaw = readOptionalBigNumber(stateStack, 0n);
 
     tokenStack.readAddress(); // factory
     const tokenName = tokenStack.readString();
@@ -657,5 +657,18 @@ function readOffchainMetadataUrl(cell: Cell) {
     return slice.loadStringTail();
   } catch {
     return null;
+  }
+}
+
+function readOptionalBigNumber(
+  stack: {
+    readBigNumber: () => bigint;
+  },
+  fallback: bigint,
+) {
+  try {
+    return stack.readBigNumber();
+  } catch {
+    return fallback;
   }
 }

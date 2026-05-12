@@ -2,6 +2,7 @@ import { Address } from "@ton/core";
 import type { Paginated, Token, TokenListParams, Transaction, UserPortfolio } from "./types";
 import { DEFAULT_TOKEN_IMAGE_URL } from "./tonLaunchpad";
 import { derivePresaleStatus } from "./presaleStatus";
+import { computeAllocationBreakdown } from "./allocationMath";
 
 export const RECENT_LAUNCHES_KEY = "tonpad_recent_launches";
 
@@ -127,6 +128,19 @@ export function tokenFromLaunchInput(args: {
   factoryAddress?: string;
   createdAt: string;
 }): Token {
+  const allocationBreakdown = computeAllocationBreakdown({
+    totalSupply: args.form.totalSupply,
+    presalePercent: args.form.allocations.presale,
+    liquidityPercentTokens: args.form.allocations.liquidity,
+    creatorPercent: args.form.allocations.creator,
+    totalRaisedTon: 0,
+    liquidityPercentOfRaised: args.form.liquidityPercent,
+    platformTonFeeBps: 500,
+    platformTokenFeeBps: 100,
+    liquidityTreasurySet: false,
+    burnedTokens: 0,
+  });
+
   return normalizeToken({
     id: args.id,
     address: null,
@@ -158,6 +172,8 @@ export function tokenFromLaunchInput(args: {
     marketCap: 0,
     volume24h: 0,
     holders: 0,
+    allocationBreakdown,
+    setupState: "preparing",
   });
 }
 

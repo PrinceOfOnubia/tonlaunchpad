@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { PresaleInfo, PresaleStatus } from "./types";
 
 export function derivePresaleStatus(presale: PresaleInfo, nowMs = Date.now()): PresaleStatus {
+  const rawStatus = String(presale.status);
+  if (rawStatus === "canceled" || rawStatus === "cancelled") return "failed";
   if (presale.status === "succeeded") return "succeeded";
   if (presale.status === "failed") return "failed";
   if (presale.status === "finalized") return "finalized";

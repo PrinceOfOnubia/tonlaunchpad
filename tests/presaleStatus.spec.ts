@@ -42,4 +42,13 @@ describe("derivePresaleStatus", () => {
 
     expect(status).toBe("succeeded");
   });
+
+  it("treats canceled presales as failed for public display", () => {
+    const status = derivePresaleStatus(
+      presale({ status: "canceled" as never, raised: 2 }),
+      new Date("2026-05-11T11:00:00.000Z").getTime(),
+    );
+
+    expect(status).toBe("failed");
+  });
 });
